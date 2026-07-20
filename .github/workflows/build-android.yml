@@ -1,0 +1,45 @@
+# Builds the Android APK in the cloud with GameCI - no local Unity needed.
+# Requires repo secrets: UNITY_EMAIL, UNITY_PASSWORD (and optionally UNITY_LICENSE).
+name: Build Android APK
+
+on:
+  workflow_dispatch:      # run manually from the Actions tab
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+
+      - name: Cache Library
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-Android-${{ hashFiles('Packages/manifest.json') }}
+          restore-keys: Library-Android-
+
+      - name: Build with Unity
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        with:
+          targetPlatform: Android
+          unityVersion: auto                # reads ProjectSettings/ProjectVersion.txt
+          buildMethod: TankBattle.EditorTools.CiBuild.Build
+          androidExportType: androidPackage # plain .apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TankBattleLAN-APK
+          path: build/Android
