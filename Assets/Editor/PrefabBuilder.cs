@@ -118,10 +118,8 @@ namespace TankBattle.EditorTools
                 BuildHeavyHull(NewHull(root, 1), hullMat, darkMat, metalMat);
                 BuildScoutHull(NewHull(root, 2), hullMat, darkMat, metalMat);
 
-                // Muzzle: bullet spawn point just past every barrel tip.
-                var muzzle = new GameObject("Muzzle").transform;
-                muzzle.SetParent(root.transform, false);
-                muzzle.localPosition = new Vector3(0f, 1.05f, 1.9f);
+                // ---- independent rotating turret (shared by all hull styles) ----
+                var muzzle = BuildTurret(root, hullMat, metalMat);
 
                 // ---- particle effects (played by gameplay scripts by name) ----
                 var flash = AddParticles(root, "MuzzleFlashPS", fxAdd,
@@ -184,6 +182,7 @@ namespace TankBattle.EditorTools
                 nt.RotAngleThreshold = 0.5f;
 
                 root.AddComponent<TankController>();
+                root.AddComponent<TurretAim>();   // rotates the TurretPivot
                 var health = root.AddComponent<TankHealth>();
                 health.healthBarFill = fill.transform;
                 health.healthBarFillRenderer = fill.GetComponent<MeshRenderer>();
@@ -214,6 +213,7 @@ namespace TankBattle.EditorTools
                 BuildStandardHull(NewHull(root, 0), hullMat, darkMat, metalMat);
                 BuildHeavyHull(NewHull(root, 1), hullMat, darkMat, metalMat);
                 BuildScoutHull(NewHull(root, 2), hullMat, darkMat, metalMat);
+                BuildTurret(root, hullMat, metalMat); // static gun for the preview
                 PrefabUtility.SaveAsPrefabAsset(root, "Assets/Resources/TankPreview.prefab");
             }
             finally
@@ -230,6 +230,37 @@ namespace TankBattle.EditorTools
             return hull;
         }
 
+        /// <summary>
+        /// Shared rotating turret (cannon) on a pivot at the tank root, so it can
+        /// yaw independently of the hull. Returns the muzzle transform (bullet
+        /// spawn point) at the barrel tip.
+        /// </summary>
+        static Transform BuildTurret(GameObject root, Material hullMat, Material metalMat)
+        {
+            var pivot = new GameObject("TurretPivot").transform;
+            pivot.SetParent(root.transform, false);
+            pivot.localPosition = new Vector3(0f, 1.05f, -0.05f);
+
+            // Turret box (camo, tinted with the player colour) + steel barrel.
+            AddPart(pivot.gameObject, PrimitiveType.Cube, "Turret",
+                new Vector3(0f, 0f, -0.05f), new Vector3(1.0f, 0.42f, 1.05f), hullMat);
+            var barrel = AddPart(pivot.gameObject, PrimitiveType.Cylinder, "Barrel",
+                new Vector3(0f, 0f, 0.95f), new Vector3(0.15f, 0.6f, 0.15f), metalMat);
+            barrel.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            AddPart(pivot.gameObject, PrimitiveType.Cube, "MuzzleBrake",
+                new Vector3(0f, 0f, 1.5f), new Vector3(0.24f, 0.24f, 0.2f), metalMat);
+            AddPart(pivot.gameObject, PrimitiveType.Cylinder, "Hatch",
+                new Vector3(-0.25f, 0.24f, -0.3f), new Vector3(0.3f, 0.05f, 0.3f), metalMat);
+
+            var muzzle = new GameObject("Muzzle").transform;
+            muzzle.SetParent(pivot, false);
+            muzzle.localPosition = new Vector3(0f, 0f, 1.9f);
+            return muzzle;
+        }
+
+        // Hulls carry the body + tracks + style flavour only; the turret is a
+        // separate rotating pivot built by BuildTurret (shared across styles).
+
         /// <summary>Style 0 - STANDARD: the classic balanced silhouette.</summary>
         static void BuildStandardHull(GameObject h, Material hull, Material dark, Material metal)
         {
@@ -239,16 +270,8 @@ namespace TankBattle.EditorTools
                 new Vector3(-0.85f, 0.35f, 0f), new Vector3(0.4f, 0.5f, 2.3f), dark);
             AddPart(h, PrimitiveType.Cube, "TrackR",
                 new Vector3(0.85f, 0.35f, 0f), new Vector3(0.4f, 0.5f, 2.3f), dark);
-            AddPart(h, PrimitiveType.Cube, "Turret",
-                new Vector3(0f, 1.05f, -0.1f), new Vector3(0.9f, 0.4f, 1.0f), hull);
-            var barrel = AddPart(h, PrimitiveType.Cylinder, "Barrel",
-                new Vector3(0f, 1.05f, 0.95f), new Vector3(0.14f, 0.55f, 0.14f), metal);
-            barrel.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-            AddPart(h, PrimitiveType.Cube, "MuzzleBrake",
-                new Vector3(0f, 1.05f, 1.45f), new Vector3(0.22f, 0.22f, 0.18f), metal);
-            var hatch = AddPart(h, PrimitiveType.Cylinder, "Hatch",
-                new Vector3(-0.2f, 1.3f, -0.25f), new Vector3(0.3f, 0.05f, 0.3f), metal);
-            hatch.transform.localRotation = Quaternion.identity;
+            AddPart(h, PrimitiveType.Cube, "GlacisPlate",
+                new Vector3(0f, 0.5f, 1.05f), new Vector3(1.4f, 0.4f, 0.35f), hull);
         }
 
         /// <summary>Style 1 - HEAVY: wide armored brute with twin exhausts.</summary>
@@ -264,13 +287,6 @@ namespace TankBattle.EditorTools
                 new Vector3(-1.0f, 0.75f, 0f), new Vector3(0.35f, 0.25f, 2.0f), hull);
             AddPart(h, PrimitiveType.Cube, "ArmorR",
                 new Vector3(1.0f, 0.75f, 0f), new Vector3(0.35f, 0.25f, 2.0f), hull);
-            AddPart(h, PrimitiveType.Cube, "Turret",
-                new Vector3(0f, 1.12f, -0.15f), new Vector3(1.15f, 0.5f, 1.2f), hull);
-            var barrel = AddPart(h, PrimitiveType.Cylinder, "Barrel",
-                new Vector3(0f, 1.05f, 0.95f), new Vector3(0.2f, 0.55f, 0.2f), metal);
-            barrel.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-            AddPart(h, PrimitiveType.Cube, "MuzzleBrake",
-                new Vector3(0f, 1.05f, 1.5f), new Vector3(0.3f, 0.3f, 0.25f), metal);
             var ex1 = AddPart(h, PrimitiveType.Cylinder, "ExhaustL",
                 new Vector3(-0.5f, 1.0f, -1.05f), new Vector3(0.12f, 0.2f, 0.12f), metal);
             ex1.transform.localRotation = Quaternion.Euler(20f, 0f, 0f);
@@ -291,13 +307,8 @@ namespace TankBattle.EditorTools
                 new Vector3(-0.7f, 0.33f, 0f), new Vector3(0.32f, 0.45f, 2.2f), dark);
             AddPart(h, PrimitiveType.Cube, "TrackR",
                 new Vector3(0.7f, 0.33f, 0f), new Vector3(0.32f, 0.45f, 2.2f), dark);
-            AddPart(h, PrimitiveType.Cube, "Turret",
-                new Vector3(0f, 0.98f, -0.25f), new Vector3(0.7f, 0.32f, 0.8f), hull);
-            var barrel = AddPart(h, PrimitiveType.Cylinder, "Barrel",
-                new Vector3(0f, 1.02f, 0.85f), new Vector3(0.1f, 0.75f, 0.1f), metal);
-            barrel.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
             var antenna = AddPart(h, PrimitiveType.Cylinder, "Antenna",
-                new Vector3(-0.35f, 1.55f, -0.6f), new Vector3(0.03f, 0.45f, 0.03f), metal);
+                new Vector3(-0.35f, 1.05f, -0.6f), new Vector3(0.03f, 0.45f, 0.03f), metal);
             antenna.transform.localRotation = Quaternion.Euler(0f, 0f, 8f);
         }
 
