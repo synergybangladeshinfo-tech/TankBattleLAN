@@ -10,23 +10,31 @@ namespace TankBattle.UI
 {
     /// <summary>
     /// Builds and drives the whole main menu at runtime:
-    ///   Home  -> player name + HOST / JOIN / SETTINGS / QUIT
-    ///   Host  -> pick one of the 5 maps, start hosting
-    ///   Join  -> live list of LAN hosts discovered via UDP broadcast
-    ///   Lobby -> replicated player list; host presses START MATCH
+    ///   Home   -> player name + HOST / JOIN / GARAGE / SETTINGS / QUIT
+    ///   Garage -> pick tank color (8) and body style (3)
+    ///   Host   -> pick map, game mode (5) and match length, start hosting
+    ///   Join   -> live list of LAN hosts discovered via UDP broadcast
+    ///   Lobby  -> replicated player list; host presses START MATCH
     /// Also handles returning from a finished match while still connected
     /// (drops everyone straight back into the lobby).
     /// </summary>
     public class MainMenuUI : MonoBehaviour
     {
         Canvas _canvas;
-        RectTransform _homePanel, _hostPanel, _joinPanel, _lobbyPanel, _settingsPanel;
+        RectTransform _homePanel, _garagePanel, _hostPanel, _joinPanel, _lobbyPanel, _settingsPanel;
         InputField _nameField;
         Text _noticeText, _joinStatusText, _lobbyPlayersText, _lobbyStatusText;
+        Text _modeHintText, _garagePreview;
         RectTransform _hostListRoot;
         Button _startMatchButton;
-        int _selectedMap;
+        Text _hostTitle, _startHostLabel;
+        bool _soloIntent;
+        int _selectedMap, _selectedMode, _selectedTime;
         readonly List<Button> _mapButtons = new List<Button>();
+        readonly List<Button> _modeButtons = new List<Button>();
+        readonly List<Button> _timeButtons = new List<Button>();
+        readonly List<Button> _colorButtons = new List<Button>();
+        readonly List<Button> _styleButtons = new List<Button>();
         float _nextHostListRefresh;
 
         void Start()
@@ -35,14 +43,22 @@ namespace TankBattle.UI
             _canvas = UIFactory.CreateCanvas("MenuCanvas");
             _canvas.transform.SetParent(transform, false);
 
+            // Restore the Garage choices before anything reads them.
+            GameSession.TankColorIndex = SettingsManager.SavedTankColor;
+            GameSession.TankStyleIndex = SettingsManager.SavedTankStyle;
+
             BuildBackground();
             BuildHomePanel();
+            BuildGaragePanel();
             BuildHostPanel();
             BuildJoinPanel();
             BuildLobbyPanel();
             _settingsPanel = SettingsPanel.Build(_canvas.transform, () => Show(_homePanel));
 
             _selectedMap = GameSession.SelectedMapIndex;
+            _selectedMode = GameSession.SelectedModeIndex;
+            _selectedTime = GameSession.SelectedTimeIndex;
+            HighlightSelectors();
             AudioManager.Instance?.PlayMenuMusic();
 
             // Returning from a match while still connected -> straight to lobby.
@@ -86,7 +102,7 @@ namespace TankBattle.UI
             UIFactory.SetAnchoredPos(title, new Vector2(0.5f, 1f), new Vector2(0, -110));
 
             var sub = UIFactory.CreateText(_canvas.transform, "Subtitle",
-                "OFFLINE  ·  WI-FI / HOTSPOT  ·  UP TO 4 PLAYERS", 28, UIFactory.TextDim);
+                "OFFLINE  ·  WI-FI / HOTSPOT  ·  UP TO 16 PLAYERS  ·  5 MODES", 28, UIFactory.TextDim);
             UIFactory.SetAnchoredPos(sub, new Vector2(0.5f, 1f), new Vector2(0, -180));
 
             _noticeText = UIFactory.CreateText(_canvas.transform, "Notice", "", 28, UIFactory.AccentRed);
@@ -96,8 +112,8 @@ namespace TankBattle.UI
         void BuildHomePanel()
         {
             _homePanel = UIFactory.CreateCenterPanel(_canvas.transform, "HomePanel",
-                Color.clear, new Vector2(640, 660));
-            UIFactory.AddVerticalLayout(_homePanel, 22);
+                Color.clear, new Vector2(640, 760));
+            UIFactory.AddVerticalLayout(_homePanel, 20);
 
             string savedName = SettingsManager.SavedPlayerName;
             if (string.IsNullOrEmpty(savedName)) savedName = "Player" + Random.Range(100, 999);
@@ -113,54 +129,254 @@ namespace TankBattle.UI
                 SettingsManager.SavedPlayerName = GameSession.PlayerName;
             });
 
-            UIFactory.CreateButton(_homePanel, "Host", "HOST GAME", new Vector2(520, 92),
-                UIFactory.Accent, () => Show(_hostPanel));
-            UIFactory.CreateButton(_homePanel, "Join", "JOIN GAME", new Vector2(520, 92),
+            UIFactory.CreateButton(_homePanel, "Solo", "PLAY SOLO  (VS BOTS)", new Vector2(520, 90),
+                new Color(0.55f, 0.35f, 0.95f, 1f), () => OpenMatchSetup(solo: true));
+            UIFactory.CreateButton(_homePanel, "Host", "HOST GAME", new Vector2(520, 90),
+                UIFactory.Accent, () => OpenMatchSetup(solo: false));
+            UIFactory.CreateButton(_homePanel, "Join", "JOIN GAME", new Vector2(520, 90),
                 UIFactory.AccentGreen, () =>
                 {
                     Show(_joinPanel);
                     LanDiscovery.Instance?.StartSearch();
                 });
-            UIFactory.CreateButton(_homePanel, "Settings", "SETTINGS", new Vector2(520, 92),
+            UIFactory.CreateButton(_homePanel, "Garage", "GARAGE", new Vector2(520, 90),
+                new Color(0.85f, 0.60f, 0.20f, 1f), () => Show(_garagePanel));
+            UIFactory.CreateButton(_homePanel, "Settings", "SETTINGS", new Vector2(520, 90),
                 UIFactory.PanelLight, () => Show(_settingsPanel));
-            UIFactory.CreateButton(_homePanel, "Quit", "QUIT", new Vector2(520, 92),
+            UIFactory.CreateButton(_homePanel, "Quit", "QUIT", new Vector2(520, 90),
                 UIFactory.PanelLight, Application.Quit);
         }
+
+        // ---- Garage: tank color + body style ----
+
+        void BuildGaragePanel()
+        {
+            _garagePanel = UIFactory.CreateCenterPanel(_canvas.transform, "GaragePanel",
+                UIFactory.PanelColor, new Vector2(980, 800));
+            UIFactory.AddVerticalLayout(_garagePanel, 18, new RectOffset(30, 30, 24, 24));
+
+            var title = UIFactory.CreateText(_garagePanel, "Title", "GARAGE - YOUR TANK",
+                44, UIFactory.TextColor);
+            ((RectTransform)title.transform).sizeDelta = new Vector2(800, 60);
+
+            var colorLabel = UIFactory.CreateText(_garagePanel, "ColorLabel", "TANK COLOR",
+                30, UIFactory.TextDim);
+            ((RectTransform)colorLabel.transform).sizeDelta = new Vector2(800, 40);
+
+            // Two rows of four color swatches.
+            _colorButtons.Clear();
+            for (int row = 0; row < 2; row++)
+            {
+                var rowGo = new GameObject($"ColorRow{row}", typeof(RectTransform));
+                rowGo.transform.SetParent(_garagePanel, false);
+                var rowRt = (RectTransform)rowGo.transform;
+                rowRt.sizeDelta = new Vector2(840, 96);
+                var h = rowGo.AddComponent<HorizontalLayoutGroup>();
+                h.spacing = 18;
+                h.childAlignment = TextAnchor.MiddleCenter;
+                h.childControlWidth = false; h.childControlHeight = false;
+                h.childForceExpandWidth = false; h.childForceExpandHeight = false;
+
+                for (int i = 0; i < 4; i++)
+                {
+                    int index = row * 4 + i;
+                    var b = UIFactory.CreateButton(rowRt, $"Color{index}", "",
+                        new Vector2(180, 88), GameConstants.PlayerColors[index], () =>
+                        {
+                            GameSession.TankColorIndex = index;
+                            SettingsManager.SavedTankColor = index;
+                            HighlightGarage();
+                        }, 24);
+                    _colorButtons.Add(b);
+                }
+            }
+
+            var styleLabel = UIFactory.CreateText(_garagePanel, "StyleLabel", "BODY STYLE",
+                30, UIFactory.TextDim);
+            ((RectTransform)styleLabel.transform).sizeDelta = new Vector2(800, 40);
+
+            var styleRow = new GameObject("StyleRow", typeof(RectTransform));
+            styleRow.transform.SetParent(_garagePanel, false);
+            var styleRt = (RectTransform)styleRow.transform;
+            styleRt.sizeDelta = new Vector2(840, 96);
+            var sh = styleRow.AddComponent<HorizontalLayoutGroup>();
+            sh.spacing = 18;
+            sh.childAlignment = TextAnchor.MiddleCenter;
+            sh.childControlWidth = false; sh.childControlHeight = false;
+            sh.childForceExpandWidth = false; sh.childForceExpandHeight = false;
+
+            _styleButtons.Clear();
+            for (int i = 0; i < GameConstants.TankStyleNames.Length; i++)
+            {
+                int index = i;
+                var b = UIFactory.CreateButton(styleRt, $"Style{i}",
+                    GameConstants.TankStyleNames[i], new Vector2(262, 88),
+                    UIFactory.PanelLight, () =>
+                    {
+                        GameSession.TankStyleIndex = index;
+                        SettingsManager.SavedTankStyle = index;
+                        HighlightGarage();
+                    }, 28);
+                _styleButtons.Add(b);
+            }
+
+            _garagePreview = UIFactory.CreateText(_garagePanel, "Preview", "", 30, UIFactory.TextColor);
+            ((RectTransform)_garagePreview.transform).sizeDelta = new Vector2(800, 50);
+
+            UIFactory.CreateButton(_garagePanel, "Back", "SAVE & BACK", new Vector2(360, 80),
+                UIFactory.AccentGreen, () => Show(_homePanel));
+
+            HighlightGarage();
+        }
+
+        void HighlightGarage()
+        {
+            for (int i = 0; i < _colorButtons.Count; i++)
+            {
+                var outline = _colorButtons[i].GetComponent<Outline>() ??
+                              _colorButtons[i].gameObject.AddComponent<Outline>();
+                bool sel = i == GameSession.TankColorIndex;
+                outline.effectColor = Color.white;
+                outline.effectDistance = new Vector2(5, 5);
+                outline.enabled = sel;
+            }
+            for (int i = 0; i < _styleButtons.Count; i++)
+                _styleButtons[i].GetComponent<Image>().color =
+                    i == GameSession.TankStyleIndex ? UIFactory.Accent : UIFactory.PanelLight;
+
+            if (_garagePreview != null)
+            {
+                _garagePreview.text =
+                    $"{GameConstants.PlayerColorNames[GameSession.TankColorIndex]}  " +
+                    $"{GameConstants.TankStyleNames[GameSession.TankStyleIndex]}  TANK";
+                _garagePreview.color = GameConstants.PlayerColors[GameSession.TankColorIndex];
+            }
+        }
+
+        // ---- Host: map + mode + time ----
 
         void BuildHostPanel()
         {
             _hostPanel = UIFactory.CreateCenterPanel(_canvas.transform, "HostPanel",
-                UIFactory.PanelColor, new Vector2(760, 760));
-            UIFactory.AddVerticalLayout(_hostPanel, 16, new RectOffset(30, 30, 24, 24));
+                UIFactory.PanelColor, new Vector2(1720, 840));
 
-            var title = UIFactory.CreateText(_hostPanel, "Title", "CHOOSE MAP", 44, UIFactory.TextColor);
-            ((RectTransform)title.transform).sizeDelta = new Vector2(600, 60);
+            _hostTitle = UIFactory.CreateText(_hostPanel, "Title", "MATCH SETUP", 44, UIFactory.TextColor);
+            UIFactory.SetAnchoredPos(_hostTitle, new Vector2(0.5f, 1f), new Vector2(0, -45));
+
+            // --- Left column: map ---
+            var mapCol = MakeColumn(_hostPanel, "MapCol", new Vector2(-560, -60));
+            var mapLabel = UIFactory.CreateText(mapCol, "Label", "MAP", 30, UIFactory.TextDim);
+            ((RectTransform)mapLabel.transform).sizeDelta = new Vector2(480, 40);
 
             _mapButtons.Clear();
             for (int i = 0; i < GameConstants.MapScenes.Length; i++)
             {
                 int index = i;
-                var b = UIFactory.CreateButton(_hostPanel, $"Map{i}",
-                    GameConstants.MapDisplayNames[i], new Vector2(640, 84),
+                var b = UIFactory.CreateButton(mapCol, $"Map{i}",
+                    GameConstants.MapDisplayNames[i], new Vector2(480, 78),
                     UIFactory.PanelLight, () =>
                     {
                         _selectedMap = index;
                         GameSession.SelectedMapIndex = index;
-                        HighlightMapButtons();
-                    }, 32);
+                        HighlightSelectors();
+                    }, 30);
                 _mapButtons.Add(b);
             }
-            HighlightMapButtons();
 
-            UIFactory.CreateButton(_hostPanel, "StartHost", "START HOSTING", new Vector2(640, 92),
-                UIFactory.Accent, () =>
+            // --- Middle column: mode ---
+            var modeCol = MakeColumn(_hostPanel, "ModeCol", new Vector2(0, -60));
+            var modeLabel = UIFactory.CreateText(modeCol, "Label", "GAME MODE", 30, UIFactory.TextDim);
+            ((RectTransform)modeLabel.transform).sizeDelta = new Vector2(480, 40);
+
+            _modeButtons.Clear();
+            for (int i = 0; i < GameConstants.GameModeNames.Length; i++)
+            {
+                int index = i;
+                var b = UIFactory.CreateButton(modeCol, $"Mode{i}",
+                    GameConstants.GameModeNames[i], new Vector2(480, 78),
+                    UIFactory.PanelLight, () =>
+                    {
+                        _selectedMode = index;
+                        GameSession.SelectedModeIndex = index;
+                        HighlightSelectors();
+                    }, 28);
+                _modeButtons.Add(b);
+            }
+
+            _modeHintText = UIFactory.CreateText(modeCol, "Hint", "", 24, UIFactory.TextDim);
+            ((RectTransform)_modeHintText.transform).sizeDelta = new Vector2(480, 60);
+
+            // --- Right column: time + start ---
+            var timeCol = MakeColumn(_hostPanel, "TimeCol", new Vector2(560, -60));
+            var timeLabel = UIFactory.CreateText(timeCol, "Label", "MATCH TIME", 30, UIFactory.TextDim);
+            ((RectTransform)timeLabel.transform).sizeDelta = new Vector2(480, 40);
+
+            _timeButtons.Clear();
+            for (int i = 0; i < GameConstants.MatchDurationLabels.Length; i++)
+            {
+                int index = i;
+                var b = UIFactory.CreateButton(timeCol, $"Time{i}",
+                    GameConstants.MatchDurationLabels[i], new Vector2(480, 70),
+                    UIFactory.PanelLight, () =>
+                    {
+                        _selectedTime = index;
+                        GameSession.SelectedTimeIndex = index;
+                        HighlightSelectors();
+                    }, 28);
+                _timeButtons.Add(b);
+            }
+
+            var spacer = UIFactory.CreateText(timeCol, "Spacer", "", 10, UIFactory.TextDim);
+            ((RectTransform)spacer.transform).sizeDelta = new Vector2(480, 14);
+
+            var startBtn = UIFactory.CreateButton(timeCol, "StartHost", "START HOSTING",
+                new Vector2(480, 92), UIFactory.Accent, () =>
                 {
                     GameSession.SelectedMapIndex = _selectedMap;
-                    if (ConnectionManager.Instance.StartHost()) Show(_lobbyPanel);
-                    else _noticeText.text = "Could not start host (port in use?)";
-                });
-            UIFactory.CreateButton(_hostPanel, "Back", "BACK", new Vector2(300, 72),
+                    GameSession.SelectedModeIndex = _selectedMode;
+                    GameSession.SelectedTimeIndex = _selectedTime;
+                    GameSession.SoloMode = _soloIntent;
+
+                    if (!ConnectionManager.Instance.StartHost(advertise: !_soloIntent))
+                    {
+                        _noticeText.text = "Could not start host (port in use?)";
+                        return;
+                    }
+
+                    if (_soloIntent)
+                        // Solo: no lobby - straight into the battle with the bots.
+                        NetworkManager.Singleton.SceneManager.LoadScene(
+                            GameConstants.MapScenes[GameSession.SelectedMapIndex],
+                            UnityEngine.SceneManagement.LoadSceneMode.Single);
+                    else
+                        Show(_lobbyPanel);
+                }, 32);
+            _startHostLabel = startBtn.GetComponentInChildren<Text>();
+            UIFactory.CreateButton(timeCol, "Back", "BACK", new Vector2(300, 70),
                 UIFactory.PanelLight, () => Show(_homePanel));
+        }
+
+        /// <summary>Open the match-setup screen for hosting or for a solo battle.</summary>
+        void OpenMatchSetup(bool solo)
+        {
+            _soloIntent = solo;
+            if (_hostTitle != null)
+                _hostTitle.text = solo ? "SOLO BATTLE  ·  YOU VS 5 BOTS" : "MATCH SETUP";
+            if (_startHostLabel != null)
+                _startHostLabel.text = solo ? "START BATTLE" : "START HOSTING";
+            Show(_hostPanel);
+        }
+
+        RectTransform MakeColumn(RectTransform parent, string name, Vector2 offset)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = offset;
+            rt.sizeDelta = new Vector2(520, 700);
+            UIFactory.AddVerticalLayout(rt, 12, new RectOffset(10, 10, 10, 10));
+            return rt;
         }
 
         void BuildJoinPanel()
@@ -196,18 +412,18 @@ namespace TankBattle.UI
         void BuildLobbyPanel()
         {
             _lobbyPanel = UIFactory.CreateCenterPanel(_canvas.transform, "LobbyPanel",
-                UIFactory.PanelColor, new Vector2(760, 700));
-            UIFactory.AddVerticalLayout(_lobbyPanel, 18, new RectOffset(30, 30, 24, 24));
+                UIFactory.PanelColor, new Vector2(860, 800));
+            UIFactory.AddVerticalLayout(_lobbyPanel, 16, new RectOffset(30, 30, 24, 24));
 
             var title = UIFactory.CreateText(_lobbyPanel, "Title", "LOBBY", 44, UIFactory.TextColor);
-            ((RectTransform)title.transform).sizeDelta = new Vector2(600, 60);
+            ((RectTransform)title.transform).sizeDelta = new Vector2(700, 60);
 
-            _lobbyPlayersText = UIFactory.CreateText(_lobbyPanel, "Players", "", 32,
+            _lobbyPlayersText = UIFactory.CreateText(_lobbyPanel, "Players", "", 26,
                 UIFactory.TextColor, TextAnchor.UpperCenter);
-            ((RectTransform)_lobbyPlayersText.transform).sizeDelta = new Vector2(640, 280);
+            ((RectTransform)_lobbyPlayersText.transform).sizeDelta = new Vector2(740, 420);
 
             _lobbyStatusText = UIFactory.CreateText(_lobbyPanel, "Status", "", 26, UIFactory.TextDim);
-            ((RectTransform)_lobbyStatusText.transform).sizeDelta = new Vector2(640, 44);
+            ((RectTransform)_lobbyStatusText.transform).sizeDelta = new Vector2(740, 44);
 
             _startMatchButton = UIFactory.CreateButton(_lobbyPanel, "StartMatch", "START MATCH",
                 new Vector2(640, 92), UIFactory.AccentGreen, () =>
@@ -272,22 +488,34 @@ namespace TankBattle.UI
 
             _startMatchButton.gameObject.SetActive(isHost);
             _lobbyStatusText.text = isHost
-                ? $"Map: {GameConstants.MapDisplayNames[GameSession.SelectedMapIndex]}  ·  {count}/{GameConstants.MaxPlayers} players"
+                ? $"{GameConstants.MapDisplayNames[GameSession.SelectedMapIndex]}  ·  " +
+                  $"{GameConstants.GameModeNames[GameSession.SelectedModeIndex]}  ·  " +
+                  $"{GameConstants.MatchDurationLabels[GameSession.SelectedTimeIndex]}  ·  " +
+                  $"{count}/{GameConstants.MaxPlayers} players"
                 : "Waiting for the host to start the match...";
         }
 
         // ------------------------------------------------------------------ misc
 
-        void HighlightMapButtons()
+        void HighlightSelectors()
         {
             for (int i = 0; i < _mapButtons.Count; i++)
                 _mapButtons[i].GetComponent<Image>().color =
                     i == _selectedMap ? UIFactory.Accent : UIFactory.PanelLight;
+            for (int i = 0; i < _modeButtons.Count; i++)
+                _modeButtons[i].GetComponent<Image>().color =
+                    i == _selectedMode ? UIFactory.Accent : UIFactory.PanelLight;
+            for (int i = 0; i < _timeButtons.Count; i++)
+                _timeButtons[i].GetComponent<Image>().color =
+                    i == _selectedTime ? UIFactory.Accent : UIFactory.PanelLight;
+            if (_modeHintText != null)
+                _modeHintText.text = GameConstants.GameModeHints[_selectedMode];
         }
 
         void Show(RectTransform panel)
         {
             _homePanel.gameObject.SetActive(panel == _homePanel);
+            _garagePanel.gameObject.SetActive(panel == _garagePanel);
             _hostPanel.gameObject.SetActive(panel == _hostPanel);
             _joinPanel.gameObject.SetActive(panel == _joinPanel);
             _lobbyPanel.gameObject.SetActive(panel == _lobbyPanel);

@@ -10,8 +10,10 @@ namespace TankBattle.UI
 {
     /// <summary>
     /// Builds and drives the entire in-game HUD at runtime:
-    ///   virtual joystick + fire button, health bar, match timer, kill counter,
-    ///   scoreboard overlay, pause menu, respawn overlay and the win screen.
+    ///   floating joystick + fire button, health bar, match timer, kill counter,
+    ///   current-weapon + ammo readout, per-mode status line (team score, zone
+    ///   points, lives, gun-game tier), scoreboard overlay, pause menu,
+    ///   respawn overlay and the win screen.
     /// One instance lives in every map scene (placed by the scene builder).
     /// </summary>
     public class HUDController : MonoBehaviour
@@ -23,11 +25,14 @@ namespace TankBattle.UI
 
         Canvas _canvas;
         Image _healthFill;
-        Text _timerText, _killsText, _respawnText;
+        Text _timerText, _modeText, _killsText, _respawnText, _weaponText;
         RectTransform _scoreboardPanel, _pausePanel, _winPanel, _settingsPanel;
         Text _scoreboardText, _winTitle, _winBoard;
         float _respawnUntil;
         bool _winShown;
+        int _lastTickSecond = -1;
+        TankController _localTank;
+        TankShooting _localShooting;
 
         void Awake()
         {
@@ -60,12 +65,31 @@ namespace TankBattle.UI
             var match = MatchManager.Instance;
             if (match == null || !match.IsSpawned) return;
 
-            // Timer (mm:ss).
+            // Timer (mm:ss) + last-10-seconds ticking.
             int secs = Mathf.CeilToInt(match.TimeRemaining.Value);
             _timerText.text = $"{secs / 60}:{secs % 60:00}";
+            if (secs <= 10 && secs > 0 && secs != _lastTickSecond && !match.MatchEnded.Value)
+            {
+                _lastTickSecond = secs;
+                AudioManager.Instance?.PlayCountdownTick();
+            }
+            _timerText.color = secs <= 10 ? UIFactory.AccentRed : UIFactory.TextColor;
+
+            // Mode-specific status line.
+            _modeText.text = BuildModeLine(match);
 
             // Local kill counter.
             _killsText.text = $"Kills: {match.GetLocalKills()}";
+
+            // Weapon + ammo readout.
+            if (_localShooting != null)
+            {
+                var def = Weapons.Get(_localShooting.Weapon.Value);
+                _weaponText.text = _localShooting.Ammo.Value < 0
+                    ? def.Name
+                    : $"{def.Name}  x{_localShooting.Ammo.Value}";
+                _weaponText.color = def.BulletColor;
+            }
 
             // Scoreboard refresh while open.
             if (_scoreboardPanel.gameObject.activeSelf)
@@ -75,9 +99,13 @@ namespace TankBattle.UI
             if (_respawnText.gameObject.activeSelf)
             {
                 float left = _respawnUntil - Time.time;
-                _respawnText.text = left > 0f
-                    ? $"DESTROYED\nRespawning in {Mathf.CeilToInt(left)}..."
-                    : "Respawning...";
+                bool outOfLives = match.CurrentMode == GameMode.LastTankStanding &&
+                                  match.GetLocalEntry().Deaths >= GameConstants.LastTankLives;
+                _respawnText.text = outOfLives
+                    ? "OUT OF LIVES\nWatch the battle end..."
+                    : (left > 0f
+                        ? $"DESTROYED\nRespawning in {Mathf.CeilToInt(left)}..."
+                        : "Respawning...");
             }
 
             // Win screen once the match ends.
@@ -85,13 +113,38 @@ namespace TankBattle.UI
         }
 
         /// <summary>Called by the local tank when it spawns.</summary>
-        public void BindLocalTank(TankController tank) { /* reserved for future use */ }
+        public void BindLocalTank(TankController tank)
+        {
+            _localTank = tank;
+            _localShooting = tank != null ? tank.GetComponent<TankShooting>() : null;
+        }
+
+        /// <summary>One-line, mode-specific status under the timer.</summary>
+        string BuildModeLine(MatchManager match)
+        {
+            switch (match.CurrentMode)
+            {
+                case GameMode.TeamDeathmatch:
+                    return $"BLUE  {match.TeamAScore.Value}  :  {match.TeamBScore.Value}  RED";
+                case GameMode.KingOfTheHill:
+                    return $"KING OF THE HILL  ·  ZONE {match.GetLocalEntry().Score}/{GameConstants.KothWinScore}";
+                case GameMode.LastTankStanding:
+                    int lives = Mathf.Max(0, GameConstants.LastTankLives - match.GetLocalEntry().Deaths);
+                    return $"LAST TANK  ·  LIVES {lives}";
+                case GameMode.GunGame:
+                    int tier = Mathf.Min(match.GetLocalKills() / GameConstants.GunGameKillsPerTier,
+                                         Weapons.GunGameOrder.Length - 1);
+                    return $"GUN GAME  ·  WEAPON {tier + 1}/{Weapons.GunGameOrder.Length}";
+                default:
+                    return "DEATHMATCH";
+            }
+        }
 
         // ---------------------------------------------------------------- pieces
 
         void BuildControls()
         {
-            // --- Joystick (bottom-left) ---
+            // --- Joystick (bottom-left, floating) ---
             var joyGo = new GameObject("Joystick", typeof(RectTransform), typeof(Image),
                                        typeof(VirtualJoystick));
             joyGo.transform.SetParent(_canvas.transform, false);
@@ -113,6 +166,22 @@ namespace TankBattle.UI
             Joystick = joyGo.GetComponent<VirtualJoystick>();
             Joystick.Init(joyRt, (RectTransform)handleGo.transform);
 
+            // Big invisible touch pad so the floating stick catches presses
+            // anywhere in the lower-left quadrant.
+            var padGo = new GameObject("JoystickPad", typeof(RectTransform), typeof(Image));
+            padGo.transform.SetParent(_canvas.transform, false);
+            var padImg = padGo.GetComponent<Image>();
+            padImg.color = new Color(0f, 0f, 0f, 0f);   // invisible but raycastable
+            var padRt = (RectTransform)padGo.transform;
+            padRt.anchorMin = Vector2.zero;
+            padRt.anchorMax = new Vector2(0.42f, 0.55f);
+            padRt.offsetMin = Vector2.zero;
+            padRt.offsetMax = Vector2.zero;
+            // Forward pad events to the joystick.
+            var fwd = padGo.AddComponent<JoystickPadForwarder>();
+            fwd.Target = Joystick;
+            joyBg.raycastTarget = false; // the pad handles all input
+
             // --- Fire button (bottom-right) ---
             var fireGo = new GameObject("FireButton", typeof(RectTransform), typeof(Image),
                                         typeof(FireButton));
@@ -127,6 +196,12 @@ namespace TankBattle.UI
             UIFactory.Stretch((RectTransform)fireLabel.transform);
 
             FireButton = fireGo.GetComponent<FireButton>();
+
+            // --- Current weapon readout (above the fire button) ---
+            _weaponText = UIFactory.CreateText(_canvas.transform, "Weapon", "CANNON", 34,
+                UIFactory.TextColor);
+            _weaponText.fontStyle = FontStyle.Bold;
+            UIFactory.SetAnchoredPos(_weaponText, new Vector2(1f, 0f), new Vector2(-215, 350));
         }
 
         void BuildStatusBar()
@@ -146,10 +221,13 @@ namespace TankBattle.UI
             _healthFill.fillMethod = Image.FillMethod.Horizontal;
             _healthFill.sprite = null;
 
-            // --- Timer (top-center) ---
+            // --- Timer (top-center) + mode line under it ---
             _timerText = UIFactory.CreateText(_canvas.transform, "Timer", "5:00", 56, UIFactory.TextColor);
             _timerText.fontStyle = FontStyle.Bold;
             UIFactory.SetAnchoredPos(_timerText, new Vector2(0.5f, 1f), new Vector2(0, -55));
+
+            _modeText = UIFactory.CreateText(_canvas.transform, "Mode", "", 28, UIFactory.TextDim);
+            UIFactory.SetAnchoredPos(_modeText, new Vector2(0.5f, 1f), new Vector2(0, -105));
 
             // --- Kill counter (under health) ---
             _killsText = UIFactory.CreateText(_canvas.transform, "Kills", "Kills: 0", 32, UIFactory.TextColor,
@@ -171,10 +249,10 @@ namespace TankBattle.UI
         void BuildScoreboard()
         {
             _scoreboardPanel = UIFactory.CreateCenterPanel(_canvas.transform, "Scoreboard",
-                UIFactory.PanelColor, new Vector2(720, 500));
+                UIFactory.PanelColor, new Vector2(860, 720));
             var title = UIFactory.CreateText(_scoreboardPanel, "Title", "SCOREBOARD", 40, UIFactory.TextColor);
             UIFactory.SetAnchoredPos(title, new Vector2(0.5f, 1f), new Vector2(0, -45));
-            _scoreboardText = UIFactory.CreateText(_scoreboardPanel, "Rows", "", 32,
+            _scoreboardText = UIFactory.CreateText(_scoreboardPanel, "Rows", "", 26,
                 UIFactory.TextColor, TextAnchor.UpperCenter);
             UIFactory.Stretch((RectTransform)_scoreboardText.transform,
                 new Vector2(30, 20), new Vector2(-30, -100));
@@ -216,16 +294,16 @@ namespace TankBattle.UI
                 new Color(0f, 0f, 0f, 0.85f), Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
 
             var box = UIFactory.CreateCenterPanel(_winPanel, "Box", UIFactory.PanelColor,
-                new Vector2(760, 640));
+                new Vector2(860, 700));
             UIFactory.AddVerticalLayout(box, 20, new RectOffset(30, 30, 30, 30));
 
             _winTitle = UIFactory.CreateText(box, "Title", "MATCH OVER", 52, UIFactory.TextColor);
             _winTitle.fontStyle = FontStyle.Bold;
-            ((RectTransform)_winTitle.transform).sizeDelta = new Vector2(660, 130);
+            ((RectTransform)_winTitle.transform).sizeDelta = new Vector2(760, 120);
 
-            _winBoard = UIFactory.CreateText(box, "Board", "", 32, UIFactory.TextColor,
+            _winBoard = UIFactory.CreateText(box, "Board", "", 26, UIFactory.TextColor,
                 TextAnchor.UpperCenter);
-            ((RectTransform)_winBoard.transform).sizeDelta = new Vector2(660, 260);
+            ((RectTransform)_winBoard.transform).sizeDelta = new Vector2(760, 320);
 
             // Host can pull everyone back to the lobby for a rematch;
             // anyone can leave on their own.
@@ -278,11 +356,7 @@ namespace TankBattle.UI
             _winShown = true;
             var match = MatchManager.Instance;
 
-            var winner = match.GetWinner();
-            bool isMe = winner.ClientId == NetworkManager.Singleton.LocalClientId;
-            _winTitle.text = isMe
-                ? "VICTORY!"
-                : $"{winner.Name}  WINS!";
+            _winTitle.text = match.GetWinnerTitle(NetworkManager.Singleton.LocalClientId);
             _winBoard.text = BuildScoreboardString();
 
             // Only the host can drag everyone back to the lobby.
@@ -300,19 +374,66 @@ namespace TankBattle.UI
         {
             var match = MatchManager.Instance;
             if (match == null) return "";
+            var mode = match.CurrentMode;
 
-            // Copy + sort by kills desc, deaths asc.
+            // Copy + sort: TDM groups by team, otherwise mode metric desc.
             var rows = new System.Collections.Generic.List<ScoreEntry>();
             foreach (var e in match.Scores) rows.Add(e);
-            rows.Sort((a, b) => a.Kills != b.Kills
-                ? b.Kills.CompareTo(a.Kills)
-                : a.Deaths.CompareTo(b.Deaths));
+            rows.Sort((a, b) =>
+            {
+                if (mode == GameMode.TeamDeathmatch && a.Team != b.Team)
+                    return a.Team.CompareTo(b.Team);
+                int ma = mode == GameMode.KingOfTheHill ? a.Score : a.Kills;
+                int mb = mode == GameMode.KingOfTheHill ? b.Score : b.Kills;
+                return ma != mb ? mb.CompareTo(ma) : a.Deaths.CompareTo(b.Deaths);
+            });
 
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine("PLAYER            KILLS   DEATHS");
-            foreach (var e in rows)
-                sb.AppendLine($"{e.Name,-16}   {e.Kills,3}      {e.Deaths,3}");
+            switch (mode)
+            {
+                case GameMode.KingOfTheHill:
+                    sb.AppendLine("PLAYER            ZONE   KILLS   DEATHS");
+                    foreach (var e in rows)
+                        sb.AppendLine($"{e.Name,-16}  {e.Score,4}   {e.Kills,3}      {e.Deaths,3}");
+                    break;
+                case GameMode.TeamDeathmatch:
+                    sb.AppendLine("TEAM  PLAYER            KILLS   DEATHS");
+                    foreach (var e in rows)
+                        sb.AppendLine($"{(e.Team == 0 ? "BLUE" : "RED "),-5} {e.Name,-16}  {e.Kills,3}      {e.Deaths,3}");
+                    break;
+                case GameMode.LastTankStanding:
+                    sb.AppendLine("PLAYER            LIVES   KILLS");
+                    foreach (var e in rows)
+                        sb.AppendLine($"{e.Name,-16}   {Mathf.Max(0, GameConstants.LastTankLives - e.Deaths),3}     {e.Kills,3}");
+                    break;
+                case GameMode.GunGame:
+                    sb.AppendLine("PLAYER            WEAPON   KILLS");
+                    foreach (var e in rows)
+                        sb.AppendLine($"{e.Name,-16}   {Mathf.Min(e.Kills / GameConstants.GunGameKillsPerTier + 1, Weapons.GunGameOrder.Length),2}/{Weapons.GunGameOrder.Length}     {e.Kills,3}");
+                    break;
+                default:
+                    sb.AppendLine("PLAYER            KILLS   DEATHS");
+                    foreach (var e in rows)
+                        sb.AppendLine($"{e.Name,-16}   {e.Kills,3}      {e.Deaths,3}");
+                    break;
+            }
             return sb.ToString();
         }
+    }
+
+    /// <summary>
+    /// Forwards pointer events from the big invisible lower-left touch pad to
+    /// the floating joystick, so pressing anywhere in that region grabs it.
+    /// </summary>
+    public class JoystickPadForwarder : MonoBehaviour,
+        UnityEngine.EventSystems.IPointerDownHandler,
+        UnityEngine.EventSystems.IDragHandler,
+        UnityEngine.EventSystems.IPointerUpHandler
+    {
+        public VirtualJoystick Target;
+
+        public void OnPointerDown(UnityEngine.EventSystems.PointerEventData e) => Target?.OnPointerDown(e);
+        public void OnDrag(UnityEngine.EventSystems.PointerEventData e) => Target?.OnDrag(e);
+        public void OnPointerUp(UnityEngine.EventSystems.PointerEventData e) => Target?.OnPointerUp(e);
     }
 }
