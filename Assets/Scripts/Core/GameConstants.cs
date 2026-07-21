@@ -41,6 +41,11 @@ namespace TankBattle.Core
         public const int GunGameKillsPerTier = 2;  // kills to advance one weapon tier
         public const float PickupRespawnSeconds = 12f;
 
+        // ---- Shield pickup (invincibility) ----
+        public const float ShieldSeconds = 120f;    // 2-minute invincibility
+        public const int ShieldPickupId = 999;      // special WeaponPickup.Type value
+        public static readonly Color ShieldColor = new Color(0.25f, 0.85f, 1f); // cyan
+
         // ---- Solo mode (vs AI bots) ----
         public const int BotCount = 5;
         public const ulong BotIdBase = 9000; // fake client ids for bot score rows
