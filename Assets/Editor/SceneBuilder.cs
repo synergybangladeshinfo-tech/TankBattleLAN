@@ -266,6 +266,7 @@ namespace TankBattle.EditorTools
             BuildScenery(d);
             BuildInteriorDecor(d);
             BuildFoliage(d);
+            BuildPlatforms(d);   // raised platforms + ramps (Mini-Militia vertical feel)
 
             // Eight spawn points on a ring, all facing the centre.
             for (int i = 0; i < 8; i++)
@@ -671,6 +672,53 @@ namespace TankBattle.EditorTools
             roof.transform.localScale = new Vector3(5.7f, 0.4f, 5.7f);
             roof.GetComponent<MeshRenderer>().sharedMaterial = _obstacle;
             roof.isStatic = true;
+        }
+
+        /// <summary>
+        /// Raised platforms you can drive onto via ramps, plus low cover walls -
+        /// gives the arena the vertical, cover-heavy feel of Mini Militia. Tanks
+        /// climb the ramps with their CharacterController.
+        /// </summary>
+        static void BuildPlatforms(MapDef d)
+        {
+            var platMat = _wall;
+            Vector3[] spots =
+            {
+                new Vector3(17f, 0f, 17f),
+                new Vector3(-17f, 0f, -17f),
+                new Vector3(-17f, 0f, 17f)
+            };
+
+            foreach (var spot in spots)
+            {
+                // Flat raised platform (top surface at y = 2).
+                Box(d, "Platform", new Vector3(spot.x, 1.0f, spot.z),
+                    new Vector3(9f, 2f, 9f), platMat);
+
+                // Ramp leading up toward the arena centre.
+                Vector3 toC = new Vector3(-spot.x, 0f, -spot.z).normalized;
+                float yaw = Mathf.Atan2(toC.x, toC.z) * Mathf.Rad2Deg;
+                Vector3 rampPos = spot + toC * 6.8f;
+                var ramp = Box(d, "Ramp", new Vector3(rampPos.x, 1.0f, rampPos.z),
+                    new Vector3(5f, 0.5f, 7f), _obstacle);
+                ramp.transform.rotation = Quaternion.Euler(-20f, yaw, 0f);
+
+                // A bit of cover on top of the platform.
+                Box(d, "PlatformCover", new Vector3(spot.x, 2.6f, spot.z),
+                    new Vector3(3f, 1.2f, 1f), _obstacle);
+            }
+
+            // Scattered low cover blocks around the middle.
+            var prev = Random.state;
+            Random.InitState(d.SceneName.GetHashCode() + 99);
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 p = new Vector3(Random.Range(-22f, 22f), 0.6f, Random.Range(-22f, 22f));
+                if (p.magnitude < 8f) continue;
+                var b = Box(d, "Cover", p, new Vector3(Random.Range(2f, 3.5f), 1.2f, Random.Range(1f, 1.6f)), _obstacle);
+                b.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 180f), 0f);
+            }
+            Random.state = prev;
         }
 
         /// <summary>Slow floating dust motes drifting through the arena air.</summary>

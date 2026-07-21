@@ -19,16 +19,18 @@ namespace TankBattle.EditorTools
         {
             EnsureFolders();
 
-            // 0. Procedural textures + the shared post-processing profile.
+            // 0. Procedural textures + hull patterns + post-processing profile.
             TextureBuilder.GenerateAll();
+            TextureBuilder.GeneratePatterns();
             PostFXBuilder.BuildProfile();
 
             // 1. Prefabs (also creates the shared materials).
             var tank = PrefabBuilder.BuildTankPrefab();
             var bullet = PrefabBuilder.BuildBulletPrefab();
             var pickup = PrefabBuilder.BuildPickupPrefab();
+            var grenade = PrefabBuilder.BuildGrenadePrefab();
             PrefabBuilder.BuildPreviewPrefab(); // Garage 3D preview (Resources)
-            var netMgr = PrefabBuilder.BuildNetworkManagerPrefab(tank, bullet, pickup);
+            var netMgr = PrefabBuilder.BuildNetworkManagerPrefab(tank, bullet, pickup, grenade);
             Debug.Log("[TankBattle] Prefabs generated.");
 
             // 2. Scenes.

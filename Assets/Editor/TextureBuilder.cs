@@ -17,6 +17,7 @@ namespace TankBattle.EditorTools
     public static class TextureBuilder
     {
         public const string TexDir = "Assets/Textures";
+        const string PatDir = "Assets/Resources/Patterns";
         const int Size = 512;
 
         // Generated once per run, consumed by PrefabBuilder / SceneBuilder.
@@ -119,6 +120,74 @@ namespace TankBattle.EditorTools
             });
 
             Debug.Log("[TankBattle] Procedural textures generated.");
+        }
+
+        /// <summary>
+        /// Selectable hull camo patterns saved to Resources/Patterns so the
+        /// TankController can load them by name at runtime (Garage choice).
+        /// Near-grayscale so the player colour tints them.
+        /// </summary>
+        public static void GeneratePatterns()
+        {
+            CreatePattern("Plain", (x, y) => Gray(0.9f + Fbm(x, y, 6f, 2) * 0.05f));
+
+            CreatePattern("Camo", (x, y) =>
+            {
+                float b1 = Mathf.PerlinNoise(x * 0.013f, y * 0.013f);
+                float b2 = Mathf.PerlinNoise(x * 0.035f + 300f, y * 0.035f);
+                float v = b1 > 0.55f ? 0.95f : (b2 > 0.5f ? 0.72f : 0.55f);
+                return Gray(v + Fbm(x, y, 10f, 2) * 0.06f);
+            });
+
+            CreatePattern("Hex", (x, y) =>
+            {
+                // Three 60-degree line sets overlap into a tech / hex mesh.
+                float a = Line((x) / 26f);
+                float b = Line((x * 0.5f + y * 0.866f) / 26f);
+                float c = Line((x * 0.5f - y * 0.866f) / 26f);
+                float line = Mathf.Max(a, Mathf.Max(b, c));
+                return Gray(line > 0.5f ? 0.55f : 0.92f);
+            });
+
+            CreatePattern("Stripe", (x, y) =>
+            {
+                float s = Mathf.Repeat((x + y) * 0.055f, 1f);
+                float v = s < 0.5f ? 0.92f : 0.6f;
+                return Gray(v + Fbm(x, y, 8f, 2) * 0.05f);
+            });
+
+            Debug.Log("[TankBattle] Hull patterns generated.");
+        }
+
+        static Color Gray(float v) { v = Mathf.Clamp01(v); return new Color(v, v, v); }
+
+        static float Line(float u)
+        {
+            float f = u - Mathf.Floor(u);
+            return f < 0.11f ? 1f : 0f;
+        }
+
+        static Texture2D CreatePattern(string name, System.Func<int, int, Color> pixel)
+        {
+            string path = $"{PatDir}/{name}.png";
+            var existing = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            if (existing != null) return existing;
+
+            if (!AssetDatabase.IsValidFolder("Assets/Resources"))
+                AssetDatabase.CreateFolder("Assets", "Resources");
+            if (!AssetDatabase.IsValidFolder(PatDir))
+                AssetDatabase.CreateFolder("Assets/Resources", "Patterns");
+
+            var tex = new Texture2D(Size, Size, TextureFormat.RGBA32, false);
+            var px = new Color[Size * Size];
+            for (int y = 0; y < Size; y++)
+                for (int x = 0; x < Size; x++)
+                    px[y * Size + x] = pixel(x, y);
+            tex.SetPixels(px);
+            tex.Apply();
+            File.WriteAllBytes(path, tex.EncodeToPNG());
+            Object.DestroyImmediate(tex);
+            return Import(path, false);
         }
 
         // ----------------------------------------------------------- patterns

@@ -112,6 +112,8 @@ namespace TankBattle.EditorTools
                 cc.center = new Vector3(0f, 0.8f, 0f);
                 cc.radius = 0.8f;
                 cc.height = 1.6f;
+                cc.slopeLimit = 55f;    // climb the ramps
+                cc.stepOffset = 0.6f;   // step onto low ledges/platforms
 
                 // ---- three swappable hull styles (TankController enables one) ----
                 BuildStandardHull(NewHull(root, 0), hullMat, darkMat, metalMat);
@@ -381,10 +383,40 @@ namespace TankBattle.EditorTools
             }
         }
 
+        // -------------------------------------------------------------- grenade
+
+        public static GameObject BuildGrenadePrefab()
+        {
+            var body = CreateMaterial("Grenade", new Color(0.22f, 0.45f, 0.2f));      // olive
+            var band = CreateMaterial("GrenadeBand", new Color(0.85f, 0.72f, 0.18f)); // yellow
+
+            var root = new GameObject("Grenade");
+            try
+            {
+                AddPart(root, PrimitiveType.Sphere, "Visual", Vector3.zero, Vector3.one * 0.45f, body);
+                AddPart(root, PrimitiveType.Cube, "Band", Vector3.zero,
+                    new Vector3(0.5f, 0.14f, 0.5f), band);
+
+                root.AddComponent<NetworkObject>();
+                var nt = root.AddComponent<NetworkTransform>(); // server-authoritative arc
+                nt.SyncRotAngleX = nt.SyncRotAngleY = nt.SyncRotAngleZ = false;
+                nt.SyncScaleX = nt.SyncScaleY = nt.SyncScaleZ = false;
+                nt.Interpolate = true;
+                nt.PositionThreshold = 0.02f;
+                root.AddComponent<Grenade>();
+
+                return PrefabUtility.SaveAsPrefabAsset(root, $"{PrefabDir}/Grenade.prefab");
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
         // ------------------------------------------------------- network manager
 
         public static GameObject BuildNetworkManagerPrefab(GameObject tankPrefab,
-            GameObject bulletPrefab, GameObject pickupPrefab)
+            GameObject bulletPrefab, GameObject pickupPrefab, GameObject grenadePrefab)
         {
             var root = new GameObject("NetworkManager");
             try
@@ -404,6 +436,7 @@ namespace TankBattle.EditorTools
                 so.FindProperty("tankPrefab").objectReferenceValue = tankPrefab;
                 so.FindProperty("bulletPrefab").objectReferenceValue = bulletPrefab;
                 so.FindProperty("pickupPrefab").objectReferenceValue = pickupPrefab;
+                so.FindProperty("grenadePrefab").objectReferenceValue = grenadePrefab;
                 so.ApplyModifiedPropertiesWithoutUndo();
 
                 return PrefabUtility.SaveAsPrefabAsset(root, $"{PrefabDir}/NetworkManager.prefab");
