@@ -24,10 +24,13 @@ namespace TankBattle.EditorTools
     {
         public const string SceneDir = "Assets/Scenes";
 
+        enum MapTheme { Desert, Urban, Forest, Alien, Fort }
+
         /// <summary>Visual theme + obstacle layout for one map.</summary>
         class MapDef
         {
             public string SceneName, DisplayName;
+            public MapTheme Theme;
             public Color Ground, Wall, Obstacle, Sky, Ambient;
             public System.Action<MapDef> BuildObstacles;
         }
@@ -68,7 +71,7 @@ namespace TankBattle.EditorTools
             {
                 new MapDef
                 {
-                    SceneName = "Map01_Arena", DisplayName = "Open Arena",
+                    SceneName = "Map01_Arena", DisplayName = "Open Arena", Theme = MapTheme.Desert,
                     Ground = new Color(0.76f, 0.70f, 0.50f), Wall = new Color(0.45f, 0.36f, 0.26f),
                     Obstacle = new Color(0.55f, 0.45f, 0.30f), Sky = new Color(0.55f, 0.75f, 0.95f),
                     Ambient = new Color(0.55f, 0.55f, 0.55f),
@@ -83,7 +86,7 @@ namespace TankBattle.EditorTools
                 },
                 new MapDef
                 {
-                    SceneName = "Map02_Crossfire", DisplayName = "Crossfire",
+                    SceneName = "Map02_Crossfire", DisplayName = "Crossfire", Theme = MapTheme.Urban,
                     Ground = new Color(0.45f, 0.52f, 0.58f), Wall = new Color(0.25f, 0.30f, 0.36f),
                     Obstacle = new Color(0.32f, 0.40f, 0.50f), Sky = new Color(0.65f, 0.60f, 0.55f),
                     Ambient = new Color(0.50f, 0.50f, 0.55f),
@@ -104,7 +107,7 @@ namespace TankBattle.EditorTools
                 },
                 new MapDef
                 {
-                    SceneName = "Map03_Maze", DisplayName = "The Maze",
+                    SceneName = "Map03_Maze", DisplayName = "The Maze", Theme = MapTheme.Forest,
                     Ground = new Color(0.40f, 0.55f, 0.35f), Wall = new Color(0.28f, 0.35f, 0.25f),
                     Obstacle = new Color(0.36f, 0.44f, 0.30f), Sky = new Color(0.60f, 0.80f, 0.70f),
                     Ambient = new Color(0.50f, 0.55f, 0.50f),
@@ -123,7 +126,7 @@ namespace TankBattle.EditorTools
                 },
                 new MapDef
                 {
-                    SceneName = "Map04_Pillars", DisplayName = "Pillar Field",
+                    SceneName = "Map04_Pillars", DisplayName = "Pillar Field", Theme = MapTheme.Alien,
                     Ground = new Color(0.35f, 0.33f, 0.40f), Wall = new Color(0.22f, 0.20f, 0.28f),
                     Obstacle = new Color(0.55f, 0.50f, 0.65f), Sky = new Color(0.30f, 0.25f, 0.45f),
                     Ambient = new Color(0.45f, 0.42f, 0.55f),
@@ -141,7 +144,7 @@ namespace TankBattle.EditorTools
                 },
                 new MapDef
                 {
-                    SceneName = "Map05_Fortress", DisplayName = "Fortress",
+                    SceneName = "Map05_Fortress", DisplayName = "Fortress", Theme = MapTheme.Fort,
                     Ground = new Color(0.72f, 0.55f, 0.42f), Wall = new Color(0.48f, 0.32f, 0.24f),
                     Obstacle = new Color(0.58f, 0.42f, 0.30f), Sky = new Color(0.95f, 0.70f, 0.45f),
                     Ambient = new Color(0.60f, 0.50f, 0.45f),
@@ -178,10 +181,15 @@ namespace TankBattle.EditorTools
         {
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-            // Per-map materials.
-            _ground = PrefabBuilder.CreateMaterial($"{d.SceneName}_Ground", d.Ground);
-            _wall = PrefabBuilder.CreateMaterial($"{d.SceneName}_Wall", d.Wall);
-            _obstacle = PrefabBuilder.CreateMaterial($"{d.SceneName}_Obstacle", d.Obstacle);
+            // Per-map TEXTURED materials (procedural textures = huge visual jump).
+            _ground = PrefabBuilder.CreateTexturedMaterial($"{d.SceneName}_Ground",
+                d.Ground, GroundTexture(d.Theme), 14f);
+            _wall = PrefabBuilder.CreateTexturedMaterial($"{d.SceneName}_Wall",
+                d.Wall, WallTexture(d.Theme), 1f, WallNormal(d.Theme));
+            _wall.mainTextureScale = new Vector2(18f, 1.2f);   // long perimeter walls
+            _wall.SetTextureScale("_BumpMap", new Vector2(18f, 1.2f));
+            _obstacle = PrefabBuilder.CreateTexturedMaterial($"{d.SceneName}_Obstacle",
+                d.Obstacle, WallTexture(d.Theme), 1.6f, WallNormal(d.Theme));
 
             // Camera with the chase behaviour (targets the local tank at spawn).
             var camGo = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener),
@@ -236,8 +244,10 @@ namespace TankBattle.EditorTools
             d.BuildObstacles?.Invoke(d);
             _layoutScale = 1f;
 
-            // Decorative scenery ring between the action and the walls.
+            // Decorative scenery ring between the action and the walls,
+            // plus themed props INSIDE the arena (trees, barrels, crystals...).
             BuildScenery(d);
+            BuildInteriorDecor(d);
 
             // Eight spawn points on a ring, all facing the centre.
             for (int i = 0; i < 8; i++)
@@ -324,8 +334,9 @@ namespace TankBattle.EditorTools
         /// <summary>Rocks + corner towers around the edge - pure decoration with collision.</summary>
         static void BuildScenery(MapDef d)
         {
-            var rockMat = PrefabBuilder.CreateMaterial($"{d.SceneName}_Rock",
-                Color.Lerp(d.Obstacle, Color.black, 0.25f));
+            var rockMat = PrefabBuilder.CreateTexturedMaterial($"{d.SceneName}_Rock",
+                Color.Lerp(d.Obstacle, Color.black, 0.25f), TextureBuilder.StoneTile, 2f,
+                TextureBuilder.StoneTileN);
 
             // Ring of rocks (deterministic pseudo-random sizes/offsets).
             for (int i = 0; i < 12; i++)
@@ -366,6 +377,162 @@ namespace TankBattle.EditorTools
                     top.isStatic = true;
                     Object.DestroyImmediate(top.GetComponent<Collider>()); // out of reach anyway
                 }
+        }
+
+        // ----------------------------------------------------- themed textures
+
+        static Texture2D GroundTexture(MapTheme t) => t switch
+        {
+            MapTheme.Desert => TextureBuilder.Sand,
+            MapTheme.Urban => TextureBuilder.Concrete,
+            MapTheme.Forest => TextureBuilder.Grass,
+            MapTheme.Alien => TextureBuilder.StoneTile,
+            _ => TextureBuilder.Sand
+        };
+
+        static Texture2D WallTexture(MapTheme t) => t switch
+        {
+            MapTheme.Urban => TextureBuilder.Concrete,
+            MapTheme.Alien => TextureBuilder.StoneTile,
+            MapTheme.Forest => TextureBuilder.StoneTile,
+            _ => TextureBuilder.Brick // desert + fort = brickwork
+        };
+
+        static Texture2D WallNormal(MapTheme t) => t switch
+        {
+            MapTheme.Urban => null,
+            MapTheme.Alien => TextureBuilder.StoneTileN,
+            MapTheme.Forest => TextureBuilder.StoneTileN,
+            _ => TextureBuilder.BrickN
+        };
+
+        // ------------------------------------------------------ interior decor
+
+        /// <summary>Eight themed prop spots inside the arena (clear of the zone,
+        /// crate points and spawn ring) - cover + atmosphere in one.</summary>
+        static void BuildInteriorDecor(MapDef d)
+        {
+            Vector3[] spots =
+            {
+                new Vector3(20f, 0f, 8f),  new Vector3(-20f, 0f, 8f),
+                new Vector3(20f, 0f, -8f), new Vector3(-20f, 0f, -8f),
+                new Vector3(8f, 0f, 20f),  new Vector3(-8f, 0f, 20f),
+                new Vector3(8f, 0f, -20f), new Vector3(-8f, 0f, -20f)
+            };
+
+            var barrelMat = PrefabBuilder.CreateTexturedMaterial("Prop_Barrel",
+                new Color(0.75f, 0.35f, 0.2f), TextureBuilder.MetalPlate, 1f, null, 0.4f, 0.5f);
+            var trunkMat = PrefabBuilder.CreateTexturedMaterial("Prop_Trunk",
+                new Color(0.55f, 0.4f, 0.28f), TextureBuilder.Planks, 1f);
+            var leafMat = PrefabBuilder.CreateTexturedMaterial("Prop_Leaf",
+                new Color(0.5f, 0.8f, 0.45f), TextureBuilder.Leaf, 2f);
+            var barrierMat = PrefabBuilder.CreateTexturedMaterial("Prop_Barrier",
+                new Color(0.85f, 0.85f, 0.88f), TextureBuilder.Concrete, 1f);
+
+            for (int i = 0; i < spots.Length; i++)
+            {
+                Vector3 p = spots[i];
+                switch (d.Theme)
+                {
+                    case MapTheme.Forest:
+                        Tree(p, trunkMat, leafMat, 1f + (i % 3) * 0.25f);
+                        break;
+                    case MapTheme.Alien:
+                        Crystal(p, i);
+                        break;
+                    case MapTheme.Urban:
+                        if (i % 2 == 0) Barrier(p, barrierMat, i * 45f);
+                        else Barrel(p, barrelMat);
+                        break;
+                    default: // Desert + Fort
+                        if (i % 2 == 0) Barrel(p, barrelMat);
+                        else Tree(p, trunkMat, leafMat, 0.8f); // sparse dry trees
+                        break;
+                }
+            }
+        }
+
+        static void Barrel(Vector3 p, Material mat)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            go.name = "Barrel";
+            if (_obstacleParent != null) go.transform.SetParent(_obstacleParent, false);
+            go.transform.position = new Vector3(p.x, 0.65f, p.z);
+            go.transform.localScale = new Vector3(0.9f, 0.65f, 0.9f);
+            go.GetComponent<MeshRenderer>().sharedMaterial = mat;
+            go.isStatic = true;
+        }
+
+        static void Barrier(Vector3 p, Material mat, float yaw)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            go.name = "Barrier";
+            if (_obstacleParent != null) go.transform.SetParent(_obstacleParent, false);
+            go.transform.position = new Vector3(p.x, 0.55f, p.z);
+            go.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+            go.transform.localScale = new Vector3(3.2f, 1.1f, 0.8f);
+            go.GetComponent<MeshRenderer>().sharedMaterial = mat;
+            go.isStatic = true;
+        }
+
+        static void Tree(Vector3 p, Material trunk, Material leaf, float scale)
+        {
+            var root = new GameObject("Tree");
+            if (_obstacleParent != null) root.transform.SetParent(_obstacleParent, false);
+            root.transform.position = p;
+
+            var t = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            t.name = "Trunk";
+            t.transform.SetParent(root.transform, false);
+            t.transform.localPosition = new Vector3(0f, 1.4f * scale, 0f);
+            t.transform.localScale = new Vector3(0.45f * scale, 1.4f * scale, 0.45f * scale);
+            t.GetComponent<MeshRenderer>().sharedMaterial = trunk;
+            t.isStatic = true;
+
+            // Two overlapping foliage spheres = fuller canopy.
+            foreach (var (off, s) in new[]
+            {
+                (new Vector3(0f, 3.4f, 0f), 2.6f),
+                (new Vector3(0.7f, 2.7f, 0.4f), 1.8f)
+            })
+            {
+                var f = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                f.name = "Leaves";
+                f.transform.SetParent(root.transform, false);
+                f.transform.localPosition = off * scale;
+                f.transform.localScale = Vector3.one * s * scale;
+                Object.DestroyImmediate(f.GetComponent<Collider>()); // drive under canopy
+                f.GetComponent<MeshRenderer>().sharedMaterial = leaf;
+                f.isStatic = true;
+            }
+        }
+
+        static void Crystal(Vector3 p, int i)
+        {
+            // Glowing alien shards (emissive material = they light up at dusk).
+            var mat = PrefabBuilder.CreateMaterial("Prop_Crystal",
+                new Color(0.6f, 0.4f, 1f));
+            mat.EnableKeyword("_EMISSION");
+            mat.SetColor("_EmissionColor", new Color(0.45f, 0.25f, 0.9f) * 1.4f);
+
+            var root = new GameObject("Crystal");
+            if (_obstacleParent != null) root.transform.SetParent(_obstacleParent, false);
+            root.transform.position = p;
+
+            foreach (var (yaw, tilt, h) in new[]
+            {
+                (i * 40f, 12f, 2.6f), (i * 40f + 140f, -18f, 1.7f)
+            })
+            {
+                var c = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                c.name = "Shard";
+                c.transform.SetParent(root.transform, false);
+                c.transform.localPosition = new Vector3(0f, h * 0.4f, 0f);
+                c.transform.localRotation = Quaternion.Euler(tilt, yaw, 45f);
+                c.transform.localScale = new Vector3(0.6f, h, 0.6f);
+                c.GetComponent<MeshRenderer>().sharedMaterial = mat;
+                c.isStatic = true;
+            }
         }
 
         // -------------------------------------------------------------- helpers

@@ -19,10 +19,14 @@ namespace TankBattle.EditorTools
         {
             EnsureFolders();
 
+            // 0. Procedural textures (all art is generated - zero binary assets).
+            TextureBuilder.GenerateAll();
+
             // 1. Prefabs (also creates the shared materials).
             var tank = PrefabBuilder.BuildTankPrefab();
             var bullet = PrefabBuilder.BuildBulletPrefab();
             var pickup = PrefabBuilder.BuildPickupPrefab();
+            PrefabBuilder.BuildPreviewPrefab(); // Garage 3D preview (Resources)
             var netMgr = PrefabBuilder.BuildNetworkManagerPrefab(tank, bullet, pickup);
             Debug.Log("[TankBattle] Prefabs generated.");
 

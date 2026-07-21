@@ -10,9 +10,10 @@ using TankBattle.Utils;
 namespace TankBattle.EditorTools
 {
     /// <summary>
-    /// Builds all runtime prefabs (Tank with 3 body styles + particle effects,
-    /// Bullet with trail, WeaponCrate, NetworkManager) and the shared materials
-    /// from Unity primitives. Invoked by TankBattleSetup.
+    /// Builds all runtime prefabs (Tank with 3 body styles, textured materials
+    /// and particle effects, Bullet with trail, WeaponCrate, NetworkManager,
+    /// plus a visual-only TankPreview for the Garage screen) and the shared
+    /// materials from Unity primitives. Invoked by TankBattleSetup.
     /// </summary>
     public static class PrefabBuilder
     {
@@ -38,6 +39,33 @@ namespace TankBattle.EditorTools
             return mat;
         }
 
+        /// <summary>Standard material with an albedo texture (+ optional normal map).</summary>
+        public static Material CreateTexturedMaterial(string name, Color color,
+            Texture2D albedo, float tiling = 1f, Texture2D normal = null,
+            float glossiness = 0.18f, float metallic = 0f)
+        {
+            string path = $"{MaterialDir}/{name}.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null)
+            {
+                mat = new Material(Shader.Find("Standard"));
+                AssetDatabase.CreateAsset(mat, path);
+            }
+            mat.color = color;
+            mat.mainTexture = albedo;
+            mat.mainTextureScale = new Vector2(tiling, tiling);
+            mat.SetFloat("_Glossiness", glossiness);
+            mat.SetFloat("_Metallic", metallic);
+            if (normal != null)
+            {
+                mat.SetTexture("_BumpMap", normal);
+                mat.SetTextureScale("_BumpMap", new Vector2(tiling, tiling));
+                mat.EnableKeyword("_NORMALMAP");
+            }
+            EditorUtility.SetDirty(mat);
+            return mat;
+        }
+
         /// <summary>Particle material (saved as an asset so the shader ships in builds).</summary>
         static Material CreateFxMaterial(string name, string shaderName, Color tint)
         {
@@ -52,11 +80,23 @@ namespace TankBattle.EditorTools
             return mat;
         }
 
+        /// <summary>The three tank materials (camo hull / rubber tracks / steel parts).</summary>
+        static (Material hull, Material dark, Material metal) TankMaterials()
+        {
+            var hull = CreateTexturedMaterial("Tank_Base", Color.white,
+                TextureBuilder.Camo, 1f, null, 0.22f, 0.05f);
+            var dark = CreateTexturedMaterial("Tank_Dark", new Color(0.85f, 0.85f, 0.85f),
+                TextureBuilder.Track, 1.5f, null, 0.1f, 0f);
+            var metal = CreateTexturedMaterial("Tank_Metal", new Color(0.8f, 0.82f, 0.85f),
+                TextureBuilder.MetalPlate, 1f, null, 0.45f, 0.6f);
+            return (hull, dark, metal);
+        }
+
         // ----------------------------------------------------------------- tank
 
         public static GameObject BuildTankPrefab()
         {
-            var tankMat = CreateMaterial("Tank_Base", Color.white);
+            var (hullMat, darkMat, metalMat) = TankMaterials();
             var barBg = CreateMaterial("HealthBar_BG", new Color(0.1f, 0.1f, 0.1f), unlit: true);
             var barFill = CreateMaterial("HealthBar_Fill", Color.green, unlit: true);
             var fxAdd = CreateFxMaterial("FX_Additive", "Legacy Shaders/Particles/Additive",
@@ -74,9 +114,9 @@ namespace TankBattle.EditorTools
                 cc.height = 1.6f;
 
                 // ---- three swappable hull styles (TankController enables one) ----
-                BuildStandardHull(NewHull(root, 0), tankMat);
-                BuildHeavyHull(NewHull(root, 1), tankMat);
-                BuildScoutHull(NewHull(root, 2), tankMat);
+                BuildStandardHull(NewHull(root, 0), hullMat, darkMat, metalMat);
+                BuildHeavyHull(NewHull(root, 1), hullMat, darkMat, metalMat);
+                BuildScoutHull(NewHull(root, 2), hullMat, darkMat, metalMat);
 
                 // Muzzle: bullet spawn point just past every barrel tip.
                 var muzzle = new GameObject("Muzzle").transform;
@@ -101,6 +141,12 @@ namespace TankBattle.EditorTools
                 AddParticles(root, "ExplosionPS", fxAdd,
                     new Color(1f, 0.5f, 0.15f), burst: 48, life: 0.75f, speed: 9f,
                     size: 1.0f, cone: false).transform.localPosition = new Vector3(0f, 1f, 0f);
+
+                // Track dust kicked up while driving (rate driven by TankController).
+                var dust = AddParticles(root, "DustPS", fxSmoke,
+                    new Color(0.75f, 0.68f, 0.55f, 0.35f), burst: 0, life: 0.9f, speed: 1.2f,
+                    size: 0.7f, cone: false, loop: true, rate: 0f, autoPlay: true);
+                dust.transform.localPosition = new Vector3(0f, 0.15f, -1.1f);
 
                 // Overhead health bar (billboarded quads).
                 var barPivot = new GameObject("HealthBarPivot").transform;
@@ -136,6 +182,30 @@ namespace TankBattle.EditorTools
             }
         }
 
+        /// <summary>
+        /// Visual-only tank (all three hulls, no scripts) placed in Resources
+        /// so the Garage screen can show a live rotating 3D preview.
+        /// </summary>
+        public static void BuildPreviewPrefab()
+        {
+            if (!AssetDatabase.IsValidFolder("Assets/Resources"))
+                AssetDatabase.CreateFolder("Assets", "Resources");
+
+            var (hullMat, darkMat, metalMat) = TankMaterials();
+            var root = new GameObject("TankPreview");
+            try
+            {
+                BuildStandardHull(NewHull(root, 0), hullMat, darkMat, metalMat);
+                BuildHeavyHull(NewHull(root, 1), hullMat, darkMat, metalMat);
+                BuildScoutHull(NewHull(root, 2), hullMat, darkMat, metalMat);
+                PrefabUtility.SaveAsPrefabAsset(root, "Assets/Resources/TankPreview.prefab");
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
         static GameObject NewHull(GameObject root, int index)
         {
             var hull = new GameObject($"Hull_{index}");
@@ -145,73 +215,73 @@ namespace TankBattle.EditorTools
         }
 
         /// <summary>Style 0 - STANDARD: the classic balanced silhouette.</summary>
-        static void BuildStandardHull(GameObject h, Material mat)
+        static void BuildStandardHull(GameObject h, Material hull, Material dark, Material metal)
         {
             AddPart(h, PrimitiveType.Cube, "Body",
-                new Vector3(0f, 0.55f, 0f), new Vector3(1.5f, 0.55f, 2.1f), mat);
+                new Vector3(0f, 0.55f, 0f), new Vector3(1.5f, 0.55f, 2.1f), hull);
             AddPart(h, PrimitiveType.Cube, "TrackL",
-                new Vector3(-0.85f, 0.35f, 0f), new Vector3(0.4f, 0.5f, 2.3f), mat);
+                new Vector3(-0.85f, 0.35f, 0f), new Vector3(0.4f, 0.5f, 2.3f), dark);
             AddPart(h, PrimitiveType.Cube, "TrackR",
-                new Vector3(0.85f, 0.35f, 0f), new Vector3(0.4f, 0.5f, 2.3f), mat);
+                new Vector3(0.85f, 0.35f, 0f), new Vector3(0.4f, 0.5f, 2.3f), dark);
             AddPart(h, PrimitiveType.Cube, "Turret",
-                new Vector3(0f, 1.05f, -0.1f), new Vector3(0.9f, 0.4f, 1.0f), mat);
+                new Vector3(0f, 1.05f, -0.1f), new Vector3(0.9f, 0.4f, 1.0f), hull);
             var barrel = AddPart(h, PrimitiveType.Cylinder, "Barrel",
-                new Vector3(0f, 1.05f, 0.95f), new Vector3(0.14f, 0.55f, 0.14f), mat);
+                new Vector3(0f, 1.05f, 0.95f), new Vector3(0.14f, 0.55f, 0.14f), metal);
             barrel.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
             AddPart(h, PrimitiveType.Cube, "MuzzleBrake",
-                new Vector3(0f, 1.05f, 1.45f), new Vector3(0.22f, 0.22f, 0.18f), mat);
+                new Vector3(0f, 1.05f, 1.45f), new Vector3(0.22f, 0.22f, 0.18f), metal);
             var hatch = AddPart(h, PrimitiveType.Cylinder, "Hatch",
-                new Vector3(-0.2f, 1.3f, -0.25f), new Vector3(0.3f, 0.05f, 0.3f), mat);
+                new Vector3(-0.2f, 1.3f, -0.25f), new Vector3(0.3f, 0.05f, 0.3f), metal);
             hatch.transform.localRotation = Quaternion.identity;
         }
 
         /// <summary>Style 1 - HEAVY: wide armored brute with twin exhausts.</summary>
-        static void BuildHeavyHull(GameObject h, Material mat)
+        static void BuildHeavyHull(GameObject h, Material hull, Material dark, Material metal)
         {
             AddPart(h, PrimitiveType.Cube, "Body",
-                new Vector3(0f, 0.58f, 0f), new Vector3(1.8f, 0.65f, 2.2f), mat);
+                new Vector3(0f, 0.58f, 0f), new Vector3(1.8f, 0.65f, 2.2f), hull);
             AddPart(h, PrimitiveType.Cube, "TrackL",
-                new Vector3(-1.0f, 0.38f, 0f), new Vector3(0.5f, 0.55f, 2.5f), mat);
+                new Vector3(-1.0f, 0.38f, 0f), new Vector3(0.5f, 0.55f, 2.5f), dark);
             AddPart(h, PrimitiveType.Cube, "TrackR",
-                new Vector3(1.0f, 0.38f, 0f), new Vector3(0.5f, 0.55f, 2.5f), mat);
+                new Vector3(1.0f, 0.38f, 0f), new Vector3(0.5f, 0.55f, 2.5f), dark);
             AddPart(h, PrimitiveType.Cube, "ArmorL",
-                new Vector3(-1.0f, 0.75f, 0f), new Vector3(0.35f, 0.25f, 2.0f), mat);
+                new Vector3(-1.0f, 0.75f, 0f), new Vector3(0.35f, 0.25f, 2.0f), hull);
             AddPart(h, PrimitiveType.Cube, "ArmorR",
-                new Vector3(1.0f, 0.75f, 0f), new Vector3(0.35f, 0.25f, 2.0f), mat);
+                new Vector3(1.0f, 0.75f, 0f), new Vector3(0.35f, 0.25f, 2.0f), hull);
             AddPart(h, PrimitiveType.Cube, "Turret",
-                new Vector3(0f, 1.12f, -0.15f), new Vector3(1.15f, 0.5f, 1.2f), mat);
+                new Vector3(0f, 1.12f, -0.15f), new Vector3(1.15f, 0.5f, 1.2f), hull);
             var barrel = AddPart(h, PrimitiveType.Cylinder, "Barrel",
-                new Vector3(0f, 1.05f, 0.95f), new Vector3(0.2f, 0.55f, 0.2f), mat);
+                new Vector3(0f, 1.05f, 0.95f), new Vector3(0.2f, 0.55f, 0.2f), metal);
             barrel.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
             AddPart(h, PrimitiveType.Cube, "MuzzleBrake",
-                new Vector3(0f, 1.05f, 1.5f), new Vector3(0.3f, 0.3f, 0.25f), mat);
+                new Vector3(0f, 1.05f, 1.5f), new Vector3(0.3f, 0.3f, 0.25f), metal);
             var ex1 = AddPart(h, PrimitiveType.Cylinder, "ExhaustL",
-                new Vector3(-0.5f, 1.0f, -1.05f), new Vector3(0.12f, 0.2f, 0.12f), mat);
+                new Vector3(-0.5f, 1.0f, -1.05f), new Vector3(0.12f, 0.2f, 0.12f), metal);
             ex1.transform.localRotation = Quaternion.Euler(20f, 0f, 0f);
             var ex2 = AddPart(h, PrimitiveType.Cylinder, "ExhaustR",
-                new Vector3(0.5f, 1.0f, -1.05f), new Vector3(0.12f, 0.2f, 0.12f), mat);
+                new Vector3(0.5f, 1.0f, -1.05f), new Vector3(0.12f, 0.2f, 0.12f), metal);
             ex2.transform.localRotation = Quaternion.Euler(20f, 0f, 0f);
         }
 
         /// <summary>Style 2 - SCOUT: slim, angular and fast-looking.</summary>
-        static void BuildScoutHull(GameObject h, Material mat)
+        static void BuildScoutHull(GameObject h, Material hull, Material dark, Material metal)
         {
             AddPart(h, PrimitiveType.Cube, "Body",
-                new Vector3(0f, 0.52f, -0.1f), new Vector3(1.2f, 0.45f, 1.9f), mat);
+                new Vector3(0f, 0.52f, -0.1f), new Vector3(1.2f, 0.45f, 1.9f), hull);
             var nose = AddPart(h, PrimitiveType.Cube, "Nose",
-                new Vector3(0f, 0.62f, 1.0f), new Vector3(1.0f, 0.35f, 0.7f), mat);
+                new Vector3(0f, 0.62f, 1.0f), new Vector3(1.0f, 0.35f, 0.7f), hull);
             nose.transform.localRotation = Quaternion.Euler(-18f, 0f, 0f);
             AddPart(h, PrimitiveType.Cube, "TrackL",
-                new Vector3(-0.7f, 0.33f, 0f), new Vector3(0.32f, 0.45f, 2.2f), mat);
+                new Vector3(-0.7f, 0.33f, 0f), new Vector3(0.32f, 0.45f, 2.2f), dark);
             AddPart(h, PrimitiveType.Cube, "TrackR",
-                new Vector3(0.7f, 0.33f, 0f), new Vector3(0.32f, 0.45f, 2.2f), mat);
+                new Vector3(0.7f, 0.33f, 0f), new Vector3(0.32f, 0.45f, 2.2f), dark);
             AddPart(h, PrimitiveType.Cube, "Turret",
-                new Vector3(0f, 0.98f, -0.25f), new Vector3(0.7f, 0.32f, 0.8f), mat);
+                new Vector3(0f, 0.98f, -0.25f), new Vector3(0.7f, 0.32f, 0.8f), hull);
             var barrel = AddPart(h, PrimitiveType.Cylinder, "Barrel",
-                new Vector3(0f, 1.02f, 0.85f), new Vector3(0.1f, 0.75f, 0.1f), mat);
+                new Vector3(0f, 1.02f, 0.85f), new Vector3(0.1f, 0.75f, 0.1f), metal);
             barrel.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
             var antenna = AddPart(h, PrimitiveType.Cylinder, "Antenna",
-                new Vector3(-0.35f, 1.55f, -0.6f), new Vector3(0.03f, 0.45f, 0.03f), mat);
+                new Vector3(-0.35f, 1.55f, -0.6f), new Vector3(0.03f, 0.45f, 0.03f), metal);
             antenna.transform.localRotation = Quaternion.Euler(0f, 0f, 8f);
         }
 
@@ -262,7 +332,8 @@ namespace TankBattle.EditorTools
 
         public static GameObject BuildPickupPrefab()
         {
-            var crateMat = CreateMaterial("Crate", Color.white); // tinted at runtime
+            var crateMat = CreateTexturedMaterial("Crate", Color.white,
+                TextureBuilder.Planks, 1f); // tinted per weapon at runtime
 
             var root = new GameObject("WeaponCrate");
             try
@@ -351,7 +422,7 @@ namespace TankBattle.EditorTools
         /// <summary>One pre-configured burst/loop particle system child.</summary>
         static ParticleSystem AddParticles(GameObject parent, string name, Material mat,
             Color color, int burst, float life, float speed, float size,
-            bool cone, bool loop = false, float rate = 0f)
+            bool cone, bool loop = false, float rate = 0f, bool autoPlay = false)
         {
             var go = new GameObject(name, typeof(ParticleSystem));
             go.transform.SetParent(parent.transform, false);
@@ -359,7 +430,7 @@ namespace TankBattle.EditorTools
 
             var main = ps.main;
             main.loop = loop;
-            main.playOnAwake = false;
+            main.playOnAwake = autoPlay;
             main.startLifetime = life;
             main.startSpeed = speed;
             main.startSize = size;
@@ -405,8 +476,7 @@ namespace TankBattle.EditorTools
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             renderer.receiveShadows = false;
 
-            var psStop = ps; // returned for callers that reposition/parent it
-            return psStop;
+            return ps;
         }
     }
 }
