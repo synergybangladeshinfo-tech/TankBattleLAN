@@ -1,3 +1,4 @@
+using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using TankBattle.Core;
@@ -12,23 +13,31 @@ namespace TankBattle.Gameplay
     ///   joystick X = hull rotation
     /// Movement runs only on the owning client (owner-authoritative transform
     /// via ClientNetworkTransform) for zero-latency touch controls.
-    /// Also applies the per-player color that the server assigns at spawn.
+    /// Also applies the color / body style / name assigned at spawn, and shows
+    /// a floating name tag above every remote tank.
     /// </summary>
     [RequireComponent(typeof(CharacterController))]
     public class TankController : NetworkBehaviour
     {
         [Header("Movement")]
-        [SerializeField] float moveSpeed = 7f;        // m/s forward
+        [SerializeField] float moveSpeed = 7f;        // m/s forward (Standard style)
         [SerializeField] float reverseSpeed = 4f;     // m/s backward
         [SerializeField] float turnSpeed = 130f;      // degrees/s
         [SerializeField] float gravity = 25f;
 
-        /// <summary>Color slot assigned by the server when the tank is spawned.</summary>
+        /// <summary>Identity assigned by the server when the tank is spawned.</summary>
         public NetworkVariable<int> ColorIndex = new NetworkVariable<int>(-1);
+        public NetworkVariable<int> StyleIndex = new NetworkVariable<int>(0);
+        public NetworkVariable<int> TeamIndex = new NetworkVariable<int>(-1);
+        public NetworkVariable<FixedString32Bytes> PlayerName =
+            new NetworkVariable<FixedString32Bytes>(new FixedString32Bytes(""));
 
         CharacterController _cc;
         TankHealth _health;
         float _verticalVelocity;
+        TextMesh _nameTag;
+        bool _localBound; // camera + HUD attached (retried until the scene is ready)
+        bool _isBot;      // cached: AI-driven tank (server drives it, not input)
 
         void Awake()
         {
@@ -38,22 +47,48 @@ namespace TankBattle.Gameplay
 
         public override void OnNetworkSpawn()
         {
-            // Tint the tank with the owner's color (now and on late change).
+            _isBot = GetComponent<BotTank>() != null;
+            ApplyStyle(StyleIndex.Value);
             ApplyColor(ColorIndex.Value);
+            StyleIndex.OnValueChanged += (_, v) => { ApplyStyle(v); ApplyColor(ColorIndex.Value); };
             ColorIndex.OnValueChanged += (_, v) => ApplyColor(v);
+            PlayerName.OnValueChanged += (_, v) => { if (_nameTag != null) _nameTag.text = v.ToString(); };
 
             if (IsOwner)
             {
-                // Attach the scene camera and the HUD to the local tank.
-                var cam = Object.FindFirstObjectByType<CameraFollow>();
-                if (cam != null) cam.SetTarget(transform);
-                if (HUDController.Instance != null) HUDController.Instance.BindLocalTank(this);
+                TryBindLocal();
             }
+            else
+            {
+                CreateNameTag();
+            }
+
+            // Bots are server-owned, so the host would otherwise skip their tag.
+            if (_isBot && _nameTag == null && IsOwner) CreateNameTag();
+        }
+
+        /// <summary>
+        /// Attach the scene camera and HUD to the local tank. Retried from
+        /// Update because on joining clients the tank can spawn a moment
+        /// before the map scene (camera/HUD) has finished loading.
+        /// </summary>
+        void TryBindLocal()
+        {
+            if (_isBot) { _localBound = true; return; }
+
+            var cam = Object.FindFirstObjectByType<CameraFollow>();
+            if (cam != null) cam.SetTarget(transform);
+            if (HUDController.Instance != null) HUDController.Instance.BindLocalTank(this);
+            _localBound = cam != null && HUDController.Instance != null;
         }
 
         void Update()
         {
             if (!IsOwner || !IsSpawned) return;
+            if (_isBot) return; // AI drives bot tanks (see BotTank)
+
+            // Late scene load on joiners: keep trying until camera + HUD exist.
+            if (!_localBound) TryBindLocal();
 
             // Frozen while dead or after the match has ended.
             bool frozen = (_health != null && _health.IsDead.Value) ||
@@ -61,11 +96,15 @@ namespace TankBattle.Gameplay
 
             Vector2 input = frozen ? Vector2.zero : ReadInput();
 
+            // Small, fair per-style speed differences (Heavy slower, Scout faster).
+            Vector2 mult = GameConstants.TankStyleSpeed[
+                Mathf.Clamp(StyleIndex.Value, 0, GameConstants.TankStyleSpeed.Length - 1)];
+
             // Hull rotation.
-            transform.Rotate(0f, input.x * turnSpeed * Time.deltaTime, 0f);
+            transform.Rotate(0f, input.x * turnSpeed * mult.y * Time.deltaTime, 0f);
 
             // Throttle along the hull's forward axis.
-            float speed = input.y >= 0f ? moveSpeed : reverseSpeed;
+            float speed = (input.y >= 0f ? moveSpeed : reverseSpeed) * mult.x;
             Vector3 motion = transform.forward * (input.y * speed);
 
             // Simple gravity so tanks stick to ramps and the ground.
@@ -82,7 +121,7 @@ namespace TankBattle.Gameplay
             if (HUDController.Instance != null && HUDController.Instance.Joystick != null)
             {
                 Vector2 j = HUDController.Instance.Joystick.Direction;
-                if (j.sqrMagnitude > 0.01f) return j;
+                if (j.sqrMagnitude > 0.0001f) return j;
             }
 #if UNITY_EDITOR || UNITY_STANDALONE
             return new Vector2(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical"));
@@ -91,16 +130,46 @@ namespace TankBattle.Gameplay
 #endif
         }
 
-        /// <summary>Tint every mesh except the health bar with the player color.</summary>
+        /// <summary>Enable only the hull matching the chosen body style.</summary>
+        void ApplyStyle(int style)
+        {
+            for (int i = 0; i < GameConstants.TankStyleNames.Length; i++)
+            {
+                var hull = transform.Find($"Hull_{i}");
+                if (hull != null) hull.gameObject.SetActive(i == style);
+            }
+        }
+
+        /// <summary>Tint every hull mesh (skip health bar, name tag and particles).</summary>
         void ApplyColor(int index)
         {
             if (index < 0) return;
             Color c = GameConstants.GetPlayerColor(index);
             foreach (var r in GetComponentsInChildren<MeshRenderer>(true))
             {
-                if (r.GetComponentInParent<Billboard>() != null) continue; // skip health bar
+                if (r.GetComponentInParent<Billboard>() != null) continue; // bar / name tag
                 r.material.color = c;
             }
+            if (_nameTag != null) _nameTag.color = Color.Lerp(c, Color.white, 0.35f);
+        }
+
+        /// <summary>Floating name above remote tanks (own name would block the view).</summary>
+        void CreateNameTag()
+        {
+            var go = new GameObject("NameTag");
+            go.transform.SetParent(transform, false);
+            go.transform.localPosition = new Vector3(0f, 2.85f, 0f);
+            go.AddComponent<Billboard>();
+
+            _nameTag = go.AddComponent<TextMesh>();
+            _nameTag.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _nameTag.GetComponent<MeshRenderer>().material = _nameTag.font.material;
+            _nameTag.text = PlayerName.Value.ToString();
+            _nameTag.fontSize = 48;
+            _nameTag.characterSize = 0.045f;
+            _nameTag.anchor = TextAnchor.MiddleCenter;
+            _nameTag.alignment = TextAlignment.Center;
+            _nameTag.color = Color.white;
         }
 
         /// <summary>
