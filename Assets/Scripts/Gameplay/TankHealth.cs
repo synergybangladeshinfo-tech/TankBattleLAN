@@ -204,6 +204,7 @@ namespace TankBattle.Gameplay
                 if (_explosion != null) _explosion.Play();
                 if (_smoke != null) _smoke.Stop(true, ParticleSystemStopBehavior.StopEmitting);
                 AudioManager.Instance?.PlayExplosionAt(transform.position);
+                TankBattle.Utils.CameraFollow.Instance?.ShakeAt(transform.position, 0.7f);
             }
 
             if (IsOwner && HUDController.Instance != null)

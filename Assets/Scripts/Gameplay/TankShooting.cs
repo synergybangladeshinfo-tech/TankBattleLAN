@@ -52,6 +52,11 @@ namespace TankBattle.Gameplay
 
             _nextLocalFire = Time.time + Weapons.Get(Weapon.Value).FireInterval;
             FireServerRpc();
+
+            // Punchy recoil kick on the local camera.
+            var def = Weapons.Get(Weapon.Value);
+            float kick = def.SplashRadius > 0f ? 0.32f : 0.12f; // rockets kick harder
+            TankBattle.Utils.CameraFollow.Instance?.Shake(kick);
         }
 
         bool FirePressed()
