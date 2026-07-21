@@ -22,6 +22,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # The Unity editor + Android module + IL2CPP build need ~25 GB; the
+      # stock runner image only has ~14 GB free. Delete preinstalled tools we
+      # never use (dotnet, the runner's own Android SDK - Unity installs its
+      # own - CodeQL, browsers' haskell, docker images) to make room.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+                      /usr/local/.ghcup /usr/share/swift || true
+          sudo docker image prune --all --force || true
+          df -h /
+
       - name: Setup Unity Editor + Android module
         uses: RageAgainstThePixel/unity-setup@v2
         id: unity-setup
@@ -29,7 +41,7 @@ jobs:
           unity-version: '6000.0.x'
           build-targets: Android
           modules: android
-          cache-installation: true
+          cache-installation: false
 
       - name: Activate Unity Personal license
         uses: RageAgainstThePixel/activate-unity-license@v2
