@@ -446,7 +446,10 @@ namespace TankBattle.Gameplay
             var p = _pickupPoints[pointIndex].transform;
             GameObject go = Instantiate(prefab, p.position + Vector3.up * 1.1f, p.rotation);
             var pickup = go.GetComponent<WeaponPickup>();
-            pickup.Type.Value = (int)Weapons.RandomPickup();
+            // ~1 in 6 crates is a shield (invincibility) instead of a weapon.
+            pickup.Type.Value = UnityEngine.Random.value < 0.17f
+                ? GameConstants.ShieldPickupId
+                : (int)Weapons.RandomPickup();
             pickup.PointIndex = pointIndex;
             go.GetComponent<NetworkObject>().Spawn(true);
         }

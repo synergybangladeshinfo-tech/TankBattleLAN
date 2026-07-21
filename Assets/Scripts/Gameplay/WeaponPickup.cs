@@ -1,6 +1,7 @@
 using Unity.Netcode;
 using UnityEngine;
 using TankBattle.Audio;
+using TankBattle.Core;
 
 namespace TankBattle.Gameplay
 {
@@ -31,10 +32,12 @@ namespace TankBattle.Gameplay
         {
             _basePos = transform.position;
 
-            // Tint the crate so players can read the weapon from a distance.
-            var def = Weapons.Get(Type.Value);
+            // Tint the crate so players can read the contents from a distance.
+            Color tint = Type.Value == GameConstants.ShieldPickupId
+                ? GameConstants.ShieldColor
+                : Weapons.Get(Type.Value).BulletColor;
             foreach (var mr in GetComponentsInChildren<MeshRenderer>())
-                mr.material.color = def.BulletColor;
+                mr.material.color = tint;
         }
 
         void Update()
@@ -56,12 +59,18 @@ namespace TankBattle.Gameplay
                 if (health == null || health.IsDead.Value) continue;
                 if (Vector3.Distance(po.transform.position, _basePos) > takeRadius) continue;
 
-                var shooting = po.GetComponent<TankShooting>();
-                if (shooting == null) continue;
-
-                // Grant the weapon with its full ammo load.
-                var def = Weapons.Get(Type.Value);
-                shooting.ServerSetWeapon(Type.Value, def.Ammo);
+                if (Type.Value == GameConstants.ShieldPickupId)
+                {
+                    // Shield crate: grant 2-minute invincibility.
+                    health.ServerGrantShield();
+                }
+                else
+                {
+                    var shooting = po.GetComponent<TankShooting>();
+                    if (shooting == null) continue;
+                    var def = Weapons.Get(Type.Value);
+                    shooting.ServerSetWeapon(Type.Value, def.Ammo);
+                }
 
                 _taken = true;
                 TakenClientRpc(_basePos);

@@ -27,12 +27,17 @@ namespace TankBattle.Gameplay
         public NetworkVariable<int> Health = new NetworkVariable<int>(GameConstants.MaxHealth);
         public NetworkVariable<bool> IsDead = new NetworkVariable<bool>(false);
 
+        /// <summary>True while a shield pickup is protecting this tank (invincible).</summary>
+        public NetworkVariable<bool> Shielded = new NetworkVariable<bool>(false);
+
         /// <summary>Every spawned tank (players AND bots) - used for targeting/aim/splash.</summary>
         public static readonly List<TankHealth> All = new List<TankHealth>();
 
         Renderer[] _renderers;
         TankController _controller;
         ParticleSystem _smoke, _sparks, _explosion;
+        Transform _shieldBubble;   // translucent sphere shown while shielded
+        Coroutine _shieldRoutine;
         BotTank _bot;
         bool _botChecked;
 
@@ -61,6 +66,9 @@ namespace TankBattle.Gameplay
                 else if (ps.name == "HitSparkPS") _sparks = ps;
                 else if (ps.name == "ExplosionPS") _explosion = ps;
             }
+
+            var bubble = transform.Find("ShieldBubble");
+            if (bubble != null) { _shieldBubble = bubble; _shieldBubble.gameObject.SetActive(false); }
         }
 
         public override void OnNetworkSpawn()
@@ -72,8 +80,10 @@ namespace TankBattle.Gameplay
 
             Health.OnValueChanged += OnHealthChanged;
             IsDead.OnValueChanged += OnDeadChanged;
+            Shielded.OnValueChanged += OnShieldChanged;
             OnHealthChanged(GameConstants.MaxHealth, Health.Value);
             OnDeadChanged(false, IsDead.Value);
+            OnShieldChanged(false, Shielded.Value);
         }
 
         public override void OnNetworkDespawn()
@@ -81,14 +91,32 @@ namespace TankBattle.Gameplay
             All.Remove(this);
             Health.OnValueChanged -= OnHealthChanged;
             IsDead.OnValueChanged -= OnDeadChanged;
+            Shielded.OnValueChanged -= OnShieldChanged;
         }
 
         // ---------------------------------------------------------------- server
+
+        /// <summary>Server: grant (or refresh) the 2-minute invincibility shield.</summary>
+        public void ServerGrantShield()
+        {
+            if (!IsServer) return;
+            if (_shieldRoutine != null) StopCoroutine(_shieldRoutine);
+            _shieldRoutine = StartCoroutine(ShieldRoutine());
+        }
+
+        IEnumerator ShieldRoutine()
+        {
+            Shielded.Value = true;
+            yield return new WaitForSeconds(GameConstants.ShieldSeconds);
+            Shielded.Value = false;
+            _shieldRoutine = null;
+        }
 
         /// <summary>Apply damage. Server only. attackerId gets kill credit.</summary>
         public void TakeDamage(int amount, ulong attackerId)
         {
             if (!IsServer || IsDead.Value) return;
+            if (Shielded.Value) return; // invincible while shielded
 
             Health.Value = Mathf.Max(0, Health.Value - amount);
             if (Health.Value > 0) return;
@@ -124,6 +152,9 @@ namespace TankBattle.Gameplay
 
             Health.Value = GameConstants.MaxHealth;
             IsDead.Value = false;
+
+            // Losing the shield on death would be unfair mid-timer; keep it,
+            // but a fresh spawn with full health + shield is fine.
         }
 
         [ClientRpc]
@@ -180,6 +211,11 @@ namespace TankBattle.Gameplay
                 if (dead) HUDController.Instance.ShowRespawnOverlay(GameConstants.RespawnDelay);
                 else HUDController.Instance.HideRespawnOverlay();
             }
+        }
+
+        void OnShieldChanged(bool _, bool on)
+        {
+            if (_shieldBubble != null) _shieldBubble.gameObject.SetActive(on);
         }
     }
 }
