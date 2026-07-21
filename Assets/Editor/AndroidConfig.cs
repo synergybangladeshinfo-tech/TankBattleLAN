@@ -19,8 +19,8 @@ namespace TankBattle.EditorTools
             PlayerSettings.productName = "Tank Battle LAN";
             PlayerSettings.companyName = "TankBattleLAN";
             PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.tankbattlelan.game");
-            PlayerSettings.bundleVersion = "1.0.0";
-            PlayerSettings.Android.bundleVersionCode = 1;
+            PlayerSettings.bundleVersion = "2.0.0";
+            PlayerSettings.Android.bundleVersionCode = 2;
 
             // Scripting: IL2CPP release for both mainstream ABIs.
             PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);

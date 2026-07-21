@@ -22,7 +22,8 @@ namespace TankBattle.EditorTools
             // 1. Prefabs (also creates the shared materials).
             var tank = PrefabBuilder.BuildTankPrefab();
             var bullet = PrefabBuilder.BuildBulletPrefab();
-            var netMgr = PrefabBuilder.BuildNetworkManagerPrefab(tank, bullet);
+            var pickup = PrefabBuilder.BuildPickupPrefab();
+            var netMgr = PrefabBuilder.BuildNetworkManagerPrefab(tank, bullet, pickup);
             Debug.Log("[TankBattle] Prefabs generated.");
 
             // 2. Scenes.
@@ -31,7 +32,8 @@ namespace TankBattle.EditorTools
             SceneBuilder.RegisterScenesInBuildSettings();
             Debug.Log("[TankBattle] Scenes generated and registered in Build Settings.");
 
-            // 3. Android settings.
+            // 3. App icon (drawn in code) + Android settings.
+            IconBuilder.BuildAndAssignIcon();
             AndroidConfig.Apply();
 
             AssetDatabase.SaveAssets();

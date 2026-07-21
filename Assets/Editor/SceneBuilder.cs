@@ -4,7 +4,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
-using UnityEngine.SceneManagement;
 using TankBattle.Audio;
 using TankBattle.Core;
 using TankBattle.Gameplay;
@@ -17,6 +16,9 @@ namespace TankBattle.EditorTools
     /// <summary>
     /// Generates the MainMenu scene and the five low-poly map scenes entirely
     /// from primitives, then registers them all in the Android build settings.
+    /// v2: bigger 80x80 arenas for 16 players, procedural gradient skyboxes,
+    /// distance fog, decorative scenery ring, 8 spawn points, 6 weapon-crate
+    /// points and the King of the Hill zone in every map.
     /// </summary>
     public static class SceneBuilder
     {
@@ -153,7 +155,6 @@ namespace TankBattle.EditorTools
                             Box(d, "FortEW_A", new Vector3(10f * s, 1.5f, -6.5f), new Vector3(1.5f, 3f, 7f));
                             Box(d, "FortEW_B", new Vector3(10f * s, 1.5f, 6.5f), new Vector3(1.5f, 3f, 7f));
                         }
-                        Cylinder(d, "Tower", new Vector3(0f, 2.5f, 0f), new Vector3(4f, 2.5f, 4f));
                         foreach (var sx in new[] { -1f, 1f })
                             foreach (var sz in new[] { -1f, 1f })
                             {
@@ -170,6 +171,8 @@ namespace TankBattle.EditorTools
         }
 
         static Material _ground, _wall, _obstacle; // per-map, set in BuildMap
+        const float ArenaHalf = 40f;   // 80 x 80 playfield for 16 players
+        const float LayoutScale = 1.3f; // obstacle layouts were authored for 60x60
 
         static void BuildMap(MapDef d)
         {
@@ -185,50 +188,83 @@ namespace TankBattle.EditorTools
                                        typeof(CameraFollow));
             camGo.tag = "MainCamera";
             var cam = camGo.GetComponent<Camera>();
-            cam.clearFlags = CameraClearFlags.SolidColor; // cheaper than a skybox
-            cam.backgroundColor = d.Sky;
-            cam.farClipPlane = 150f;
-            camGo.transform.position = new Vector3(0f, 30f, -35f);
+            cam.clearFlags = CameraClearFlags.Skybox;
+            cam.farClipPlane = 220f;
+            camGo.transform.position = new Vector3(0f, 35f, -45f);
             camGo.transform.rotation = Quaternion.Euler(40f, 0f, 0f);
 
-            // Light + flat ambient (no baking required).
+            // Procedural gradient skybox - far nicer than a flat color, and the
+            // shader is included in the build because the material is an asset.
+            var sky = CreateSkyboxMaterial(d);
+            RenderSettings.skybox = sky;
+
+            // Light + flat ambient (no baking required) + distance fog.
             var lightGo = new GameObject("Directional Light", typeof(Light));
             var light = lightGo.GetComponent<Light>();
             light.type = LightType.Directional;
-            light.intensity = 1.1f;
+            light.intensity = 1.15f;
+            light.color = new Color(1f, 0.97f, 0.92f); // warm sun
             light.shadows = LightShadows.Soft; // runtime quality setting can disable
             lightGo.transform.rotation = Quaternion.Euler(55f, -35f, 0f);
             RenderSettings.ambientMode = AmbientMode.Flat;
             RenderSettings.ambientLight = d.Ambient;
-            RenderSettings.fog = false;
+            RenderSettings.sun = light;
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.Linear;
+            RenderSettings.fogColor = Color.Lerp(d.Sky, Color.white, 0.15f);
+            RenderSettings.fogStartDistance = 55f;
+            RenderSettings.fogEndDistance = 160f;
 
-            // Ground (60 x 60) + perimeter walls.
+            // Ground (80 x 80) + perimeter walls.
             var geometry = new GameObject("Geometry");
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";
             ground.transform.SetParent(geometry.transform, false);
-            ground.transform.localScale = new Vector3(6f, 1f, 6f);
+            ground.transform.localScale = new Vector3(ArenaHalf / 5f, 1f, ArenaHalf / 5f);
             ground.GetComponent<MeshRenderer>().sharedMaterial = _ground;
             ground.isStatic = true;
 
             _obstacleParent = geometry.transform;
-            Box(d, "WallN", new Vector3(0f, 1.5f, 30.5f), new Vector3(62f, 3f, 1f), _wall);
-            Box(d, "WallS", new Vector3(0f, 1.5f, -30.5f), new Vector3(62f, 3f, 1f), _wall);
-            Box(d, "WallE", new Vector3(30.5f, 1.5f, 0f), new Vector3(1f, 3f, 62f), _wall);
-            Box(d, "WallW", new Vector3(-30.5f, 1.5f, 0f), new Vector3(1f, 3f, 62f), _wall);
+            _layoutScale = 1f; // walls use absolute positions
+            Box(d, "WallN", new Vector3(0f, 1.5f, ArenaHalf + 0.5f), new Vector3(ArenaHalf * 2f + 2f, 3f, 1f), _wall);
+            Box(d, "WallS", new Vector3(0f, 1.5f, -ArenaHalf - 0.5f), new Vector3(ArenaHalf * 2f + 2f, 3f, 1f), _wall);
+            Box(d, "WallE", new Vector3(ArenaHalf + 0.5f, 1.5f, 0f), new Vector3(1f, 3f, ArenaHalf * 2f + 2f), _wall);
+            Box(d, "WallW", new Vector3(-ArenaHalf - 0.5f, 1.5f, 0f), new Vector3(1f, 3f, ArenaHalf * 2f + 2f), _wall);
 
-            // Map-specific obstacles.
+            // Map-specific obstacles (scaled up into the bigger arena).
+            _layoutScale = LayoutScale;
             d.BuildObstacles?.Invoke(d);
+            _layoutScale = 1f;
 
-            // Four spawn points facing the centre.
-            for (int i = 0; i < 4; i++)
+            // Decorative scenery ring between the action and the walls.
+            BuildScenery(d);
+
+            // Eight spawn points on a ring, all facing the centre.
+            for (int i = 0; i < 8; i++)
             {
-                float sx = (i % 2 == 0) ? -1f : 1f;
-                float sz = (i < 2) ? -1f : 1f;
+                float ang = i * 45f * Mathf.Deg2Rad;
+                Vector3 pos = new Vector3(Mathf.Sin(ang), 0f, Mathf.Cos(ang)) * 33f;
+                pos.y = 0.1f;
                 var sp = new GameObject($"Spawn_{i}", typeof(SpawnPoint));
-                sp.transform.position = new Vector3(24f * sx, 0.1f, 24f * sz);
-                sp.transform.rotation = Quaternion.LookRotation(new Vector3(-sx, 0f, -sz));
+                sp.transform.position = pos;
+                sp.transform.rotation = Quaternion.LookRotation(-pos.normalized);
             }
+
+            // Six weapon-crate points (centre cross + two diagonals).
+            Vector3[] pickupSpots =
+            {
+                new Vector3(14f, 0f, 0f), new Vector3(-14f, 0f, 0f),
+                new Vector3(0f, 0f, 14f), new Vector3(0f, 0f, -14f),
+                new Vector3(24f, 0f, 24f), new Vector3(-24f, 0f, -24f)
+            };
+            for (int i = 0; i < pickupSpots.Length; i++)
+            {
+                var pp = new GameObject($"Pickup_{i}", typeof(PickupPoint));
+                pp.transform.position = pickupSpots[i];
+            }
+
+            // King of the Hill zone (auto-hidden in other modes).
+            BuildKothZone(d);
 
             // Match logic (in-scene NetworkObject) + runtime-built HUD.
             var mm = new GameObject("MatchManager");
@@ -239,16 +275,110 @@ namespace TankBattle.EditorTools
             EditorSceneManager.SaveScene(scene, $"{SceneDir}/{d.SceneName}.unity");
         }
 
+        // ------------------------------------------------------------- skies etc
+
+        static Material CreateSkyboxMaterial(MapDef d)
+        {
+            string path = $"{PrefabBuilder.MaterialDir}/{d.SceneName}_Sky.mat";
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (existing == null)
+            {
+                existing = new Material(Shader.Find("Skybox/Procedural"));
+                AssetDatabase.CreateAsset(existing, path);
+            }
+            existing.SetColor("_SkyTint", d.Sky);
+            existing.SetColor("_GroundColor", Color.Lerp(d.Ground, Color.black, 0.35f));
+            existing.SetFloat("_Exposure", 1.2f);
+            existing.SetFloat("_AtmosphereThickness", 0.9f);
+            existing.SetFloat("_SunSize", 0.05f);
+            return existing;
+        }
+
+        static void BuildKothZone(MapDef d)
+        {
+            // Transparent glowing disc at the centre of the map.
+            string path = $"{PrefabBuilder.MaterialDir}/KothZone.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null)
+            {
+                mat = new Material(Shader.Find("Legacy Shaders/Transparent/Diffuse"));
+                AssetDatabase.CreateAsset(mat, path);
+            }
+            mat.color = new Color(1f, 0.85f, 0.2f, 0.35f);
+
+            var zone = new GameObject("KothZone", typeof(KothZone));
+            zone.transform.position = new Vector3(0f, 0.03f, 0f);
+
+            var disc = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            disc.name = "ZoneDisc";
+            disc.transform.SetParent(zone.transform, false);
+            disc.transform.localScale = new Vector3(GameConstants.KothZoneRadius * 2f, 0.02f,
+                                                    GameConstants.KothZoneRadius * 2f);
+            Object.DestroyImmediate(disc.GetComponent<Collider>()); // never blocks anything
+            var mr = disc.GetComponent<MeshRenderer>();
+            mr.sharedMaterial = mat;
+            mr.shadowCastingMode = ShadowCastingMode.Off;
+            mr.receiveShadows = false;
+        }
+
+        /// <summary>Rocks + corner towers around the edge - pure decoration with collision.</summary>
+        static void BuildScenery(MapDef d)
+        {
+            var rockMat = PrefabBuilder.CreateMaterial($"{d.SceneName}_Rock",
+                Color.Lerp(d.Obstacle, Color.black, 0.25f));
+
+            // Ring of rocks (deterministic pseudo-random sizes/offsets).
+            for (int i = 0; i < 12; i++)
+            {
+                float ang = (i * 30f + 11f) * Mathf.Deg2Rad;
+                float radius = 37.2f + ((i * 7) % 3) * 0.8f;
+                Vector3 pos = new Vector3(Mathf.Sin(ang) * radius, 0f, Mathf.Cos(ang) * radius);
+                float s = 1.6f + ((i * 13) % 5) * 0.5f;
+
+                var rock = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                rock.name = $"Rock_{i}";
+                if (_obstacleParent != null) rock.transform.SetParent(_obstacleParent, false);
+                rock.transform.position = new Vector3(pos.x, s * 0.35f, pos.z);
+                rock.transform.localScale = new Vector3(s, s * 0.7f, s);
+                rock.transform.rotation = Quaternion.Euler(0f, i * 47f, 0f);
+                rock.GetComponent<MeshRenderer>().sharedMaterial = rockMat;
+                rock.isStatic = true;
+            }
+
+            // Four corner watchtowers.
+            foreach (var sx in new[] { -1f, 1f })
+                foreach (var sz in new[] { -1f, 1f })
+                {
+                    var baseGo = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                    baseGo.name = "TowerBase";
+                    if (_obstacleParent != null) baseGo.transform.SetParent(_obstacleParent, false);
+                    baseGo.transform.position = new Vector3(37f * sx, 3f, 37f * sz);
+                    baseGo.transform.localScale = new Vector3(3f, 3f, 3f);
+                    baseGo.GetComponent<MeshRenderer>().sharedMaterial = _wall;
+                    baseGo.isStatic = true;
+
+                    var top = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    top.name = "TowerTop";
+                    if (_obstacleParent != null) top.transform.SetParent(_obstacleParent, false);
+                    top.transform.position = new Vector3(37f * sx, 6.4f, 37f * sz);
+                    top.transform.localScale = new Vector3(4.2f, 0.9f, 4.2f);
+                    top.GetComponent<MeshRenderer>().sharedMaterial = _obstacle;
+                    top.isStatic = true;
+                    Object.DestroyImmediate(top.GetComponent<Collider>()); // out of reach anyway
+                }
+        }
+
         // -------------------------------------------------------------- helpers
 
         static Transform _obstacleParent;
+        static float _layoutScale = 1f;
 
         static GameObject Box(MapDef d, string name, Vector3 pos, Vector3 scale, Material mat = null)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
             go.name = name;
             if (_obstacleParent != null) go.transform.SetParent(_obstacleParent, false);
-            go.transform.position = pos;
+            go.transform.position = new Vector3(pos.x * _layoutScale, pos.y, pos.z * _layoutScale);
             go.transform.localScale = scale;
             go.GetComponent<MeshRenderer>().sharedMaterial = mat != null ? mat : _obstacle;
             go.isStatic = true; // static batching for mobile perf
@@ -260,7 +390,7 @@ namespace TankBattle.EditorTools
             var go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             go.name = name;
             if (_obstacleParent != null) go.transform.SetParent(_obstacleParent, false);
-            go.transform.position = pos;
+            go.transform.position = new Vector3(pos.x * _layoutScale, pos.y, pos.z * _layoutScale);
             go.transform.localScale = scale;
             go.GetComponent<MeshRenderer>().sharedMaterial = _obstacle;
             go.isStatic = true;
