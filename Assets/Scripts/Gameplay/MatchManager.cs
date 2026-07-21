@@ -226,6 +226,7 @@ namespace TankBattle.Gameplay
             var tc = go.GetComponent<TankController>();
             tc.ColorIndex.Value = color;
             tc.StyleIndex.Value = info.StyleIndex;
+            tc.PatternIndex.Value = info.PatternIndex;
             tc.TeamIndex.Value = team;
             tc.PlayerName.Value = new FixedString32Bytes(info.Name);
             go.GetComponent<NetworkObject>().SpawnAsPlayerObject(clientId, true);
@@ -266,6 +267,7 @@ namespace TankBattle.Gameplay
                 var tc = go.GetComponent<TankController>();
                 tc.ColorIndex.Value = color;
                 tc.StyleIndex.Value = i % GameConstants.TankStyleNames.Length;
+                tc.PatternIndex.Value = (i + 1) % GameConstants.TankPatternNames.Length;
                 tc.TeamIndex.Value = team;
                 tc.PlayerName.Value = new FixedString32Bytes(name);
 

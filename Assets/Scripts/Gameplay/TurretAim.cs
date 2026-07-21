@@ -1,5 +1,6 @@
 using Unity.Netcode;
 using UnityEngine;
+using TankBattle.UI;
 
 namespace TankBattle.Gameplay
 {
@@ -48,24 +49,52 @@ namespace TankBattle.Gameplay
 
         void OwnerAim()
         {
-            CurrentTarget = FindTarget();
-
             float desired;
+
+            // MANUAL aim: the right stick (camera-relative) overrides auto-lock.
+            Vector2 stick = ManualAim();
+            if (stick.sqrMagnitude > 0.05f && Camera.main != null)
+            {
+                var cam = Camera.main.transform;
+                Vector3 f = cam.forward; f.y = 0f; f.Normalize();
+                Vector3 r = cam.right; r.y = 0f; r.Normalize();
+                Vector3 dir = f * stick.y + r * stick.x;
+                if (dir.sqrMagnitude > 0.001f)
+                {
+                    float worldYaw = Quaternion.LookRotation(dir.normalized, Vector3.up).eulerAngles.y;
+                    desired = Mathf.DeltaAngle(transform.eulerAngles.y, worldYaw);
+                    CurrentTarget = null; // hide the lock marker while aiming by hand
+                    Commit(desired);
+                    return;
+                }
+            }
+
+            // AUTO-LOCK fallback: track the nearest enemy.
+            CurrentTarget = FindTarget();
             if (CurrentTarget != null)
             {
                 Vector3 to = CurrentTarget.position - transform.position;
                 to.y = 0f;
                 float worldYaw = Quaternion.LookRotation(to.normalized, Vector3.up).eulerAngles.y;
-                desired = Mathf.DeltaAngle(transform.eulerAngles.y, worldYaw); // relative to hull
+                desired = Mathf.DeltaAngle(transform.eulerAngles.y, worldYaw);
             }
-            else
-            {
-                desired = 0f; // rest pointing forward
-            }
+            else desired = 0f; // rest pointing forward
+            Commit(desired);
+        }
 
+        void Commit(float desired)
+        {
             float next = Mathf.MoveTowardsAngle(TurretYaw.Value, desired, turnSpeed * Time.deltaTime);
             if (Mathf.Abs(Mathf.DeltaAngle(TurretYaw.Value, next)) > 0.05f)
                 TurretYaw.Value = next;
+        }
+
+        /// <summary>Local player's right aim stick (bots have none).</summary>
+        Vector2 ManualAim()
+        {
+            var bot = GetComponent<BotTank>();
+            if (bot != null) return Vector2.zero;
+            return HUDController.Instance != null ? HUDController.Instance.AimDirection : Vector2.zero;
         }
 
         Transform FindTarget()

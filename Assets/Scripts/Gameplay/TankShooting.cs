@@ -30,6 +30,7 @@ namespace TankBattle.Gameplay
 
         float _nextLocalFire;   // owner-side cooldown (responsiveness)
         float _nextServerFire;  // server-side cooldown (authority)
+        float _nextGrenade;     // owner-side grenade cooldown
 
         TankHealth _health;
         ParticleSystem _muzzleFlash;
@@ -48,6 +49,15 @@ namespace TankBattle.Gameplay
             if (_health != null && _health.IsDead.Value) return;
             if (MatchManager.Instance != null && MatchManager.Instance.MatchEnded.Value) return;
 
+            // Grenade throw (separate cooldown, not gated by the fire button).
+            if (HUDController.Instance != null && HUDController.Instance.ConsumeGrenade()
+                && Time.time >= _nextGrenade)
+            {
+                _nextGrenade = Time.time + GameConstants.GrenadeCooldown;
+                ThrowGrenadeServerRpc();
+                TankBattle.Utils.CameraFollow.Instance?.Shake(0.14f);
+            }
+
             if (!FirePressed() || Time.time < _nextLocalFire) return;
 
             _nextLocalFire = Time.time + Weapons.Get(Weapon.Value).FireInterval;
@@ -61,13 +71,31 @@ namespace TankBattle.Gameplay
 
         bool FirePressed()
         {
-            if (HUDController.Instance != null && HUDController.Instance.FireButton != null &&
-                HUDController.Instance.FireButton.IsPressed) return true;
+            if (HUDController.Instance != null && HUDController.Instance.FireHeld) return true;
 #if UNITY_EDITOR || UNITY_STANDALONE
             return Input.GetKey(KeyCode.Space); // editor testing convenience
 #else
             return false;
 #endif
+        }
+
+        /// <summary>Server: lob a grenade from the muzzle in an upward arc.</summary>
+        [ServerRpc]
+        void ThrowGrenadeServerRpc()
+        {
+            if (_health != null && _health.IsDead.Value) return;
+            var prefab = ConnectionManager.Instance != null ? ConnectionManager.Instance.GrenadePrefab : null;
+            if (prefab == null || muzzle == null) return;
+
+            ulong actorId = _health != null ? _health.ActorId : OwnerClientId;
+            int team = MatchManager.Instance != null ? MatchManager.Instance.GetTeam(actorId) : -1;
+
+            Vector3 fwd = muzzle.forward; fwd.y = 0f; fwd.Normalize();
+            Vector3 vel = fwd * 12f + Vector3.up * 8f;   // arc it forward + up
+
+            GameObject go = Instantiate(prefab, muzzle.position + Vector3.up * 0.3f, Quaternion.identity);
+            go.GetComponent<Grenade>().Init(actorId, team, vel);
+            go.GetComponent<NetworkObject>().Spawn(true);
         }
 
         // ---------------------------------------------------------------- server

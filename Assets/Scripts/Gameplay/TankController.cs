@@ -28,6 +28,7 @@ namespace TankBattle.Gameplay
         /// <summary>Identity assigned by the server when the tank is spawned.</summary>
         public NetworkVariable<int> ColorIndex = new NetworkVariable<int>(-1);
         public NetworkVariable<int> StyleIndex = new NetworkVariable<int>(0);
+        public NetworkVariable<int> PatternIndex = new NetworkVariable<int>(0);
         public NetworkVariable<int> TeamIndex = new NetworkVariable<int>(-1);
         public NetworkVariable<FixedString32Bytes> PlayerName =
             new NetworkVariable<FixedString32Bytes>(new FixedString32Bytes(""));
@@ -41,6 +42,8 @@ namespace TankBattle.Gameplay
 
         ParticleSystem _dust;   // track dust, emission driven by movement speed
         Vector3 _lastDustPos;
+        float _dashUntil, _dashReadyAt;   // boost/dash timing
+        bool _rammedThisDash;             // one ram hit per dash
 
         void Awake()
         {
@@ -72,8 +75,10 @@ namespace TankBattle.Gameplay
         {
             _isBot = GetComponent<BotTank>() != null;
             ApplyStyle(StyleIndex.Value);
+            ApplyPattern(PatternIndex.Value);
             ApplyColor(ColorIndex.Value);
-            StyleIndex.OnValueChanged += (_, v) => { ApplyStyle(v); ApplyColor(ColorIndex.Value); };
+            StyleIndex.OnValueChanged += (_, v) => { ApplyStyle(v); ApplyPattern(PatternIndex.Value); ApplyColor(ColorIndex.Value); };
+            PatternIndex.OnValueChanged += (_, v) => { ApplyPattern(v); ApplyColor(ColorIndex.Value); };
             ColorIndex.OnValueChanged += (_, v) => ApplyColor(v);
             PlayerName.OnValueChanged += (_, v) => { if (_nameTag != null) _nameTag.text = v.ToString(); };
 
@@ -119,6 +124,17 @@ namespace TankBattle.Gameplay
 
             Vector2 input = frozen ? Vector2.zero : ReadInput();
 
+            // Boost/dash: a burst of forward speed on a cooldown (jetpack-equivalent).
+            if (!frozen && HUDController.Instance != null && HUDController.Instance.ConsumeDash()
+                && Time.time >= _dashReadyAt)
+            {
+                _dashUntil = Time.time + GameConstants.DashDuration;
+                _dashReadyAt = Time.time + GameConstants.DashCooldown;
+                _rammedThisDash = false;
+                CameraFollow.Instance?.Shake(0.18f);
+            }
+            bool dashing = Time.time < _dashUntil;
+
             // Small, fair per-style speed differences (Heavy slower, Scout faster).
             Vector2 mult = GameConstants.TankStyleSpeed[
                 Mathf.Clamp(StyleIndex.Value, 0, GameConstants.TankStyleSpeed.Length - 1)];
@@ -126,9 +142,14 @@ namespace TankBattle.Gameplay
             // Hull rotation.
             transform.Rotate(0f, input.x * turnSpeed * mult.y * Time.deltaTime, 0f);
 
-            // Throttle along the hull's forward axis.
+            // Throttle along the hull's forward axis (dash drives full-speed ahead).
             float speed = (input.y >= 0f ? moveSpeed : reverseSpeed) * mult.x;
-            Vector3 motion = transform.forward * (input.y * speed);
+            float throttle = dashing ? 1f * GameConstants.DashSpeedMultiplier : input.y;
+            if (dashing) speed = moveSpeed * mult.x;
+            Vector3 motion = transform.forward * (throttle * speed);
+
+            // Ramming: dashing into an enemy deals melee damage (once per dash).
+            if (dashing && !_rammedThisDash) TryRam();
 
             // Simple gravity so tanks stick to ramps and the ground.
             if (_cc.isGrounded) _verticalVelocity = -1f;
@@ -136,6 +157,40 @@ namespace TankBattle.Gameplay
             motion.y = _verticalVelocity;
 
             _cc.Move(motion * Time.deltaTime);
+        }
+
+        /// <summary>Owner: if dashing into an enemy tank, ask the server to ram it.</summary>
+        void TryRam()
+        {
+            for (int i = 0; i < TankHealth.All.Count; i++)
+            {
+                var h = TankHealth.All[i];
+                if (h == null || h == _health || h.IsDead.Value) continue;
+                if (TeamIndex.Value >= 0)
+                {
+                    var tc = h.GetComponent<TankController>();
+                    if (tc != null && tc.TeamIndex.Value == TeamIndex.Value) continue;
+                }
+                Vector3 to = h.transform.position - transform.position;
+                if (to.sqrMagnitude > 9f) continue;                 // within 3m
+                if (Vector3.Dot(transform.forward, to.normalized) < 0.4f) continue; // in front
+                _rammedThisDash = true;
+                var no = h.GetComponent<NetworkObject>();
+                if (no != null) RamServerRpc(new NetworkObjectReference(no));
+                return;
+            }
+        }
+
+        [ServerRpc]
+        void RamServerRpc(NetworkObjectReference targetRef, ServerRpcParams _ = default)
+        {
+            if (targetRef.TryGet(out NetworkObject no))
+            {
+                var health = no.GetComponent<TankHealth>();
+                if (health != null && !health.IsDead.Value)
+                    health.TakeDamage(GameConstants.RamDamage,
+                        _health != null ? _health.ActorId : OwnerClientId);
+            }
         }
 
         /// <summary>Joystick on device; WASD/arrows as an editor convenience.</summary>
@@ -160,6 +215,21 @@ namespace TankBattle.Gameplay
             {
                 var hull = transform.Find($"Hull_{i}");
                 if (hull != null) hull.gameObject.SetActive(i == style);
+            }
+        }
+
+        /// <summary>Set the camo pattern texture on the tinted hull/turret panels.</summary>
+        void ApplyPattern(int pattern)
+        {
+            pattern = Mathf.Clamp(pattern, 0, GameConstants.TankPatternFiles.Length - 1);
+            var tex = Resources.Load<Texture2D>($"Patterns/{GameConstants.TankPatternFiles[pattern]}");
+            if (tex == null) return;
+            foreach (var r in GetComponentsInChildren<MeshRenderer>(true))
+            {
+                if (r.GetComponentInParent<Billboard>() != null) continue;
+                var shared = r.sharedMaterial;
+                if (shared == null || !shared.name.StartsWith("Tank_Base")) continue;
+                r.material.mainTexture = tex;
             }
         }
 
