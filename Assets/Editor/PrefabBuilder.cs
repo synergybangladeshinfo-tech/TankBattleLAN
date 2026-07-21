@@ -148,6 +148,22 @@ namespace TankBattle.EditorTools
                     size: 0.7f, cone: false, loop: true, rate: 0f, autoPlay: true);
                 dust.transform.localPosition = new Vector3(0f, 0.15f, -1.1f);
 
+                // Shield bubble: translucent cyan sphere shown while invincible.
+                var shieldMat = CreateFxMaterial("FX_Shield",
+                    "Legacy Shaders/Transparent/Diffuse", new Color(0.25f, 0.85f, 1f, 0.35f));
+                shieldMat.color = new Color(0.25f, 0.85f, 1f, 0.35f);
+                var bubble = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                bubble.name = "ShieldBubble";
+                bubble.transform.SetParent(root.transform, false);
+                bubble.transform.localPosition = new Vector3(0f, 1.0f, 0f);
+                bubble.transform.localScale = Vector3.one * 3.4f;
+                Object.DestroyImmediate(bubble.GetComponent<Collider>());
+                var bmr = bubble.GetComponent<MeshRenderer>();
+                bmr.sharedMaterial = shieldMat;
+                bmr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                bmr.receiveShadows = false;
+                bubble.SetActive(false); // toggled by TankHealth
+
                 // Overhead health bar (billboarded quads).
                 var barPivot = new GameObject("HealthBarPivot").transform;
                 barPivot.SetParent(root.transform, false);

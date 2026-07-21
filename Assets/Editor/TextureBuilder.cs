@@ -27,10 +27,15 @@ namespace TankBattle.EditorTools
         {
             Grass = Create("Grass", (x, y) =>
             {
-                float n = Fbm(x, y, 9f, 3);
-                float blades = Mathf.PerlinNoise(x * 0.45f + 90f, y * 0.45f) > 0.62f ? 0.16f : 0f;
-                float v = 0.55f + n * 0.35f + blades;
-                return new Color(v * 0.55f, v, v * 0.5f); // soft green, tint-friendly
+                // Vivid patchy lawn: darker clumps + bright blade streaks so the
+                // texture reads clearly even from the far chase camera.
+                float n = Fbm(x, y, 11f, 4);
+                float patch = Mathf.PerlinNoise(x * 0.03f, y * 0.03f);          // big clumps
+                float blades = Mathf.PerlinNoise(x * 0.6f + 90f, y * 0.18f) > 0.58f ? 0.22f : 0f;
+                float dirt = Mathf.PerlinNoise(x * 0.02f + 300f, y * 0.02f) > 0.88f ? -0.25f : 0f;
+                float v = 0.5f + n * 0.45f + blades + (patch - 0.5f) * 0.4f + dirt;
+                v = Mathf.Clamp01(v);
+                return new Color(v * 0.42f, v * 1.05f, v * 0.38f); // rich green
             });
 
             Sand = Create("Sand", (x, y) =>

@@ -183,7 +183,7 @@ namespace TankBattle.EditorTools
 
             // Per-map TEXTURED materials (procedural textures = huge visual jump).
             _ground = PrefabBuilder.CreateTexturedMaterial($"{d.SceneName}_Ground",
-                d.Ground, GroundTexture(d.Theme), 14f);
+                d.Ground, GroundTexture(d.Theme), 9f);
             _wall = PrefabBuilder.CreateTexturedMaterial($"{d.SceneName}_Wall",
                 d.Wall, WallTexture(d.Theme), 1f, WallNormal(d.Theme));
             _wall.mainTextureScale = new Vector2(18f, 1.2f);   // long perimeter walls
@@ -245,9 +245,11 @@ namespace TankBattle.EditorTools
             _layoutScale = 1f;
 
             // Decorative scenery ring between the action and the walls,
-            // plus themed props INSIDE the arena (trees, barrels, crystals...).
+            // plus themed props INSIDE the arena (trees, barrels, crystals...),
+            // plus scattered grass, bushes and roofed hideouts.
             BuildScenery(d);
             BuildInteriorDecor(d);
+            BuildFoliage(d);
 
             // Eight spawn points on a ring, all facing the centre.
             for (int i = 0; i < 8; i++)
@@ -505,6 +507,135 @@ namespace TankBattle.EditorTools
                 f.GetComponent<MeshRenderer>().sharedMaterial = leaf;
                 f.isStatic = true;
             }
+        }
+
+        /// <summary>
+        /// Scatter walk-through grass tufts + hide-in bushes across the arena,
+        /// and drop a few roofed "hideout" nooks you can duck into. All greenery
+        /// has no collision (bushes/grass) so tanks can drive through and hide;
+        /// the hideout walls DO collide for real cover.
+        /// </summary>
+        static void BuildFoliage(MapDef d)
+        {
+            // Deterministic per-map so every device builds the identical arena.
+            var prev = Random.state;
+            Random.InitState(d.SceneName.GetHashCode());
+
+            var grassMat = PrefabBuilder.CreateTexturedMaterial("Foliage_Grass",
+                new Color(0.5f, 0.95f, 0.45f), TextureBuilder.Leaf, 1f);
+            var bushMat = PrefabBuilder.CreateTexturedMaterial("Foliage_Bush",
+                new Color(0.35f, 0.75f, 0.35f), TextureBuilder.Leaf, 2f);
+
+            // Greener maps get denser grass; deserts get sparse tufts.
+            int grassCount = d.Theme == MapTheme.Forest ? 130
+                           : d.Theme == MapTheme.Fort || d.Theme == MapTheme.Urban ? 55 : 70;
+            for (int i = 0; i < grassCount; i++)
+            {
+                Vector3 p = new Vector3(Random.Range(-35f, 35f), 0f, Random.Range(-35f, 35f));
+                if (p.magnitude < 6f) continue; // keep the very centre clear
+                GrassTuft(p, grassMat, Random.Range(0.7f, 1.5f));
+            }
+
+            // Bushes big enough to hide a tank inside (no collider = drive in).
+            int bushCount = d.Theme == MapTheme.Forest ? 20 : 12;
+            for (int i = 0; i < bushCount; i++)
+            {
+                float ang = Random.value * Mathf.PI * 2f;
+                float rad = Random.Range(10f, 30f);
+                Vector3 p = new Vector3(Mathf.Cos(ang) * rad, 0f, Mathf.Sin(ang) * rad);
+                Bush(p, bushMat, Random.Range(2.2f, 3.4f));
+            }
+
+            // Three roofed hideouts (real cover you can shelter under).
+            for (int i = 0; i < 3; i++)
+            {
+                float ang = (i * 120f + 30f) * Mathf.Deg2Rad;
+                Vector3 p = new Vector3(Mathf.Cos(ang) * 22f, 0f, Mathf.Sin(ang) * 22f);
+                Hideout(p, i * 120f + 30f);
+            }
+
+            Random.state = prev;
+        }
+
+        static void GrassTuft(Vector3 p, Material mat, float scale)
+        {
+            var root = new GameObject("Grass");
+            if (_obstacleParent != null) root.transform.SetParent(_obstacleParent, false);
+            root.transform.position = p;
+            root.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+
+            // Two crossed quads = a cheap 3D-looking tuft.
+            for (int q = 0; q < 2; q++)
+            {
+                var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                quad.name = "Blade";
+                quad.transform.SetParent(root.transform, false);
+                quad.transform.localPosition = new Vector3(0f, 0.5f * scale, 0f);
+                quad.transform.localRotation = Quaternion.Euler(0f, q * 90f, 0f);
+                quad.transform.localScale = new Vector3(1.4f * scale, 1.0f * scale, 1f);
+                Object.DestroyImmediate(quad.GetComponent<Collider>());
+                var mr = quad.GetComponent<MeshRenderer>();
+                mr.sharedMaterial = mat;
+                mr.shadowCastingMode = ShadowCastingMode.Off;
+                mr.receiveShadows = false;
+                quad.isStatic = true;
+            }
+        }
+
+        static void Bush(Vector3 p, Material mat, float scale)
+        {
+            var root = new GameObject("Bush");
+            if (_obstacleParent != null) root.transform.SetParent(_obstacleParent, false);
+            root.transform.position = p;
+
+            // A clump of 3 overlapping spheres, no collider (hide inside).
+            foreach (var off in new[]
+            {
+                new Vector3(0f, scale * 0.45f, 0f),
+                new Vector3(scale * 0.35f, scale * 0.35f, scale * 0.2f),
+                new Vector3(-scale * 0.3f, scale * 0.3f, -scale * 0.25f)
+            })
+            {
+                var s = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                s.name = "Leaves";
+                s.transform.SetParent(root.transform, false);
+                s.transform.localPosition = off;
+                s.transform.localScale = Vector3.one * scale * Random.Range(0.8f, 1.1f);
+                Object.DestroyImmediate(s.GetComponent<Collider>());
+                s.GetComponent<MeshRenderer>().sharedMaterial = mat;
+                s.isStatic = true;
+            }
+        }
+
+        static void Hideout(Vector3 p, float yaw)
+        {
+            var root = new GameObject("Hideout");
+            if (_obstacleParent != null) root.transform.SetParent(_obstacleParent, false);
+            root.transform.position = p;
+            root.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+
+            // Three walls + a roof; the open side faces the centre.
+            void Wall(Vector3 lp, Vector3 ls)
+            {
+                var w = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                w.name = "HideWall";
+                w.transform.SetParent(root.transform, false);
+                w.transform.localPosition = lp;
+                w.transform.localScale = ls;
+                w.GetComponent<MeshRenderer>().sharedMaterial = _wall;
+                w.isStatic = true;
+            }
+            Wall(new Vector3(0f, 1.4f, -2.5f), new Vector3(5.5f, 2.8f, 0.5f)); // back
+            Wall(new Vector3(-2.5f, 1.4f, 0f), new Vector3(0.5f, 2.8f, 5.5f)); // left
+            Wall(new Vector3(2.5f, 1.4f, 0f), new Vector3(0.5f, 2.8f, 5.5f));  // right
+
+            var roof = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            roof.name = "HideRoof";
+            roof.transform.SetParent(root.transform, false);
+            roof.transform.localPosition = new Vector3(0f, 2.9f, 0f);
+            roof.transform.localScale = new Vector3(5.7f, 0.4f, 5.7f);
+            roof.GetComponent<MeshRenderer>().sharedMaterial = _obstacle;
+            roof.isStatic = true;
         }
 
         static void Crystal(Vector3 p, int i)
