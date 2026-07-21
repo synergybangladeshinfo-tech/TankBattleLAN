@@ -90,8 +90,14 @@ namespace TankBattle.UI
             // Local kill counter.
             _killsText.text = $"Kills: {match.GetLocalKills()}";
 
-            // Weapon + ammo readout.
-            if (_localShooting != null)
+            // Weapon + ammo readout (or SHIELDED banner while invincible).
+            var localHealth = _localTank != null ? _localTank.GetComponent<TankHealth>() : null;
+            if (localHealth != null && localHealth.Shielded.Value)
+            {
+                _weaponText.text = "SHIELDED";
+                _weaponText.color = GameConstants.ShieldColor;
+            }
+            else if (_localShooting != null)
             {
                 var def = Weapons.Get(_localShooting.Weapon.Value);
                 _weaponText.text = _localShooting.Ammo.Value < 0
