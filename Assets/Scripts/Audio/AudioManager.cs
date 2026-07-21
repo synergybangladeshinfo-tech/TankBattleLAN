@@ -5,8 +5,10 @@ namespace TankBattle.Audio
 {
     /// <summary>
     /// Music + SFX player with fully PROCEDURAL audio: every clip is synthesized
-    /// at startup (square/sine waves and filtered noise), so the project ships
-    /// zero audio assets yet still has background music and effects.
+    /// at startup (layered waves and filtered noise), so the project ships zero
+    /// audio assets yet still has background music and rich effects - including
+    /// a distinct sound per weapon, pickups, countdown ticks and a two-layer
+    /// explosion (low boom + crackle).
     /// Replace any clip with real assets later by assigning the fields.
     /// Persists across scenes; respects the sound settings.
     /// </summary>
@@ -20,7 +22,8 @@ namespace TankBattle.Audio
         AudioSource _uiSource;
 
         AudioClip _menuMusic, _battleMusic;
-        AudioClip _shoot, _hit, _explosion, _click, _victory;
+        AudioClip _hit, _explosion, _click, _victory, _pickup, _tick;
+        AudioClip[] _shots; // index-aligned with Weapons.Defs
 
         void Awake()
         {
@@ -69,10 +72,19 @@ namespace TankBattle.Audio
 
         public void PlayClick() => PlayUi(_click, 0.5f);
         public void PlayVictory() => PlayUi(_victory, 0.8f);
+        public void PlayCountdownTick() => PlayUi(_tick, 0.6f);
 
-        public void PlayShootAt(Vector3 pos) => PlayWorld(_shoot, pos, 0.7f);
+        /// <summary>Weapon-specific firing sound at a world position.</summary>
+        public void PlayShootAt(Vector3 pos, int weaponIndex = 0)
+        {
+            if (_shots == null || _shots.Length == 0) return;
+            if (weaponIndex < 0 || weaponIndex >= _shots.Length) weaponIndex = 0;
+            PlayWorld(_shots[weaponIndex], pos, 0.7f);
+        }
+
         public void PlayHitAt(Vector3 pos) => PlayWorld(_hit, pos, 0.6f);
         public void PlayExplosionAt(Vector3 pos) => PlayWorld(_explosion, pos, 0.9f);
+        public void PlayPickupAt(Vector3 pos) => PlayWorld(_pickup, pos, 0.8f);
 
         void PlayUi(AudioClip clip, float volume)
         {
@@ -94,23 +106,56 @@ namespace TankBattle.Audio
             _click = Synth("click", 0.06f, t =>
                 Mathf.Sin(2f * Mathf.PI * 1400f * t) * Mathf.Exp(-t * 60f));
 
-            _shoot = Synth("shoot", 0.25f, t =>
+            _tick = Synth("tick", 0.09f, t =>
+                Mathf.Sin(2f * Mathf.PI * 1000f * t) * Mathf.Exp(-t * 40f));
+
+            // Per-weapon shots: [Cannon, MachineGun, Shotgun, Laser, Rocket].
+            _shots = new AudioClip[5];
+
+            _shots[0] = Synth("shotCannon", 0.25f, t =>       // classic thump
             {
-                float sweep = Mathf.Lerp(320f, 70f, t / 0.25f);            // falling pitch
+                float sweep = Mathf.Lerp(320f, 70f, t / 0.25f);
                 float square = Mathf.Sign(Mathf.Sin(2f * Mathf.PI * sweep * t));
                 float noise = (Random.value * 2f - 1f) * 0.6f;
                 return (square * 0.5f + noise * 0.5f) * Mathf.Exp(-t * 18f);
             });
 
+            _shots[1] = Synth("shotMG", 0.09f, t =>           // short snappy tick
+            {
+                float noise = (Random.value * 2f - 1f);
+                float tone = Mathf.Sin(2f * Mathf.PI * 480f * t);
+                return (noise * 0.6f + tone * 0.4f) * Mathf.Exp(-t * 55f);
+            });
+
+            _shots[2] = SynthFiltered("shotShotgun", 0.30f, 0.25f, t => // wide boom
+                (Random.value * 2f - 1f) * Mathf.Exp(-t * 14f));
+
+            _shots[3] = Synth("shotLaser", 0.22f, t =>        // rising sci-fi zap
+            {
+                float sweep = Mathf.Lerp(700f, 1900f, t / 0.22f);
+                return Mathf.Sin(2f * Mathf.PI * sweep * t) * Mathf.Exp(-t * 14f) * 0.8f;
+            });
+
+            _shots[4] = SynthFiltered("shotRocket", 0.5f, 0.12f, t =>   // whoosh
+            {
+                float noise = (Random.value * 2f - 1f);
+                float env = Mathf.Sin(Mathf.Clamp01(t / 0.5f) * Mathf.PI); // swell
+                return noise * env;
+            });
+
             _hit = Synth("hit", 0.12f, t =>
                 Mathf.Sin(2f * Mathf.PI * 880f * t) * Mathf.Exp(-t * 45f));
 
-            // Explosion: decaying low-passed noise rumble.
-            _explosion = SynthFiltered("explosion", 0.7f, 0.08f, t =>
-                (Random.value * 2f - 1f) * Mathf.Exp(-t * 6f));
+            // Explosion: low-passed rumble + a crackle layer on top.
+            _explosion = SynthLayered("explosion", 0.85f,
+                (t, prevLp) => 0f, // handled inside SynthLayered
+                0.06f);
+
+            _pickup = SynthMelody("pickup",
+                new float[] { 659.25f, 830.61f, 987.77f }, 0.07f, wave: 0);
 
             _victory = SynthMelody("victory",
-                new float[] { 523.25f, 659.25f, 783.99f, 1046.5f }, 0.16f, wave: 0);
+                new float[] { 523.25f, 659.25f, 783.99f, 1046.5f, 783.99f, 1046.5f }, 0.15f, wave: 0);
 
             // Menu music: slow, soft arpeggio (sine).
             _menuMusic = SynthMelody("menuMusic", new float[]
@@ -151,6 +196,34 @@ namespace TankBattle.Audio
                 float raw = gen(i / (float)SampleRate);
                 prev += alpha * (raw - prev); // low-pass
                 data[i] = Mathf.Clamp(prev * 2.5f, -1f, 1f);
+            }
+            var clip = AudioClip.Create(name, samples, 1, SampleRate, false);
+            clip.SetData(data, 0);
+            return clip;
+        }
+
+        /// <summary>Two-layer explosion: deep filtered boom + bright crackle.</summary>
+        static AudioClip SynthLayered(string name, float duration,
+            System.Func<float, float, float> _unused, float alpha)
+        {
+            int samples = Mathf.CeilToInt(duration * SampleRate);
+            var data = new float[samples];
+            float lp = 0f;
+            for (int i = 0; i < samples; i++)
+            {
+                float t = i / (float)SampleRate;
+
+                // Layer 1: low rumble (heavily low-passed noise, slow decay).
+                float rumbleRaw = (Random.value * 2f - 1f) * Mathf.Exp(-t * 5f);
+                lp += alpha * (rumbleRaw - lp);
+                float rumble = lp * 3.0f;
+
+                // Layer 2: crackle (sparse bright pops, fast decay).
+                float crackle = 0f;
+                if (Random.value < 0.06f)
+                    crackle = (Random.value * 2f - 1f) * Mathf.Exp(-t * 9f) * 0.7f;
+
+                data[i] = Mathf.Clamp(rumble + crackle, -1f, 1f);
             }
             var clip = AudioClip.Create(name, samples, 1, SampleRate, false);
             clip.SetData(data, 0);
