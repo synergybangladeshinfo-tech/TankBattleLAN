@@ -21,7 +21,23 @@ namespace TankBattle.UI
         public static HUDController Instance { get; private set; }
 
         public VirtualJoystick Joystick { get; private set; }
+        public VirtualJoystick AimJoystick { get; private set; }
         public FireButton FireButton { get; private set; }
+
+        bool _dashQueued, _grenadeQueued;
+
+        /// <summary>Right aim-stick direction (camera-relative), for the turret.</summary>
+        public Vector2 AimDirection => AimJoystick != null ? AimJoystick.Direction : Vector2.zero;
+
+        /// <summary>Fire is held while aiming (auto-fire) or the FIRE button is down.</summary>
+        public bool FireHeld =>
+            AimDirection.sqrMagnitude > 0.04f || (FireButton != null && FireButton.IsPressed);
+
+        /// <summary>One-shot dash request (consumed by TankController).</summary>
+        public bool ConsumeDash() { if (_dashQueued) { _dashQueued = false; return true; } return false; }
+
+        /// <summary>One-shot grenade request (consumed by TankShooting).</summary>
+        public bool ConsumeGrenade() { if (_grenadeQueued) { _grenadeQueued = false; return true; } return false; }
 
         Canvas _canvas;
         Image _healthFill;
@@ -250,22 +266,66 @@ namespace TankBattle.UI
             fwd.Target = Joystick;
             joyBg.raycastTarget = false; // the pad handles all input
 
-            // --- Fire button (bottom-right) ---
+            // --- AIM joystick (bottom-right, floating) - rotates the turret ---
+            var aimGo = new GameObject("AimJoystick", typeof(RectTransform), typeof(Image),
+                                       typeof(VirtualJoystick));
+            aimGo.transform.SetParent(_canvas.transform, false);
+            var aimBg = aimGo.GetComponent<Image>();
+            aimBg.sprite = UIFactory.CircleSprite;
+            aimBg.color = new Color(1f, 0.4f, 0.35f, 0.16f);
+            aimBg.raycastTarget = false;
+            var aimRt = (RectTransform)aimGo.transform;
+            aimRt.sizeDelta = new Vector2(280, 280);
+            UIFactory.SetAnchoredPos(aimBg, new Vector2(1f, 0f), new Vector2(-90, 70));
+
+            var aimHandleGo = new GameObject("Handle", typeof(Image));
+            aimHandleGo.transform.SetParent(aimGo.transform, false);
+            var aimHandle = aimHandleGo.GetComponent<Image>();
+            aimHandle.sprite = UIFactory.CircleSprite;
+            aimHandle.color = new Color(1f, 0.55f, 0.5f, 0.5f);
+            aimHandle.raycastTarget = false;
+            ((RectTransform)aimHandleGo.transform).sizeDelta = new Vector2(120, 120);
+
+            AimJoystick = aimGo.GetComponent<VirtualJoystick>();
+            AimJoystick.Init(aimRt, (RectTransform)aimHandleGo.transform);
+
+            var aimPadGo = new GameObject("AimPad", typeof(RectTransform), typeof(Image));
+            aimPadGo.transform.SetParent(_canvas.transform, false);
+            aimPadGo.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0f);
+            var aimPadRt = (RectTransform)aimPadGo.transform;
+            aimPadRt.anchorMin = new Vector2(0.58f, 0f);
+            aimPadRt.anchorMax = new Vector2(1f, 0.5f);
+            aimPadRt.offsetMin = Vector2.zero; aimPadRt.offsetMax = Vector2.zero;
+            aimPadGo.AddComponent<JoystickPadForwarder>().Target = AimJoystick;
+
+            var aimLabel = UIFactory.CreateText(_canvas.transform, "AimLabel", "AIM", 26, UIFactory.TextDim);
+            UIFactory.SetAnchoredPos(aimLabel, new Vector2(1f, 0f), new Vector2(-90, 230));
+
+            // --- Action buttons (bottom-centre, between the two sticks) ---
             var fireGo = new GameObject("FireButton", typeof(RectTransform), typeof(Image),
                                         typeof(FireButton));
             fireGo.transform.SetParent(_canvas.transform, false);
             var fireImg = fireGo.GetComponent<Image>();
             fireImg.sprite = UIFactory.CircleSprite;
-            fireImg.color = new Color(1f, 0.30f, 0.25f, 0.55f);
-            ((RectTransform)fireGo.transform).sizeDelta = new Vector2(230, 230);
-            UIFactory.SetAnchoredPos(fireImg, new Vector2(1f, 0f), new Vector2(-100, 90));
-            var fireLabel = UIFactory.CreateText(fireGo.transform, "Label", "FIRE", 40, UIFactory.TextColor);
+            fireImg.color = new Color(1f, 0.30f, 0.25f, 0.6f);
+            ((RectTransform)fireGo.transform).sizeDelta = new Vector2(150, 150);
+            UIFactory.SetAnchoredPos(fireImg, new Vector2(0.5f, 0f), new Vector2(-170, 120));
+            var fireLabel = UIFactory.CreateText(fireGo.transform, "Label", "FIRE", 30, UIFactory.TextColor);
             fireLabel.fontStyle = FontStyle.Bold;
             UIFactory.Stretch((RectTransform)fireLabel.transform);
-
             FireButton = fireGo.GetComponent<FireButton>();
 
-            // --- Current weapon readout (above the fire button) ---
+            var dashBtn = UIFactory.CreateButton(_canvas.transform, "Dash", "DASH",
+                new Vector2(140, 140), new Color(0.25f, 0.6f, 1f, 0.6f), () => _dashQueued = true, 26);
+            var dashImg = dashBtn.GetComponent<Image>(); dashImg.sprite = UIFactory.CircleSprite;
+            UIFactory.SetAnchoredPos(dashBtn, new Vector2(0.5f, 0f), new Vector2(0, 120));
+
+            var grenBtn = UIFactory.CreateButton(_canvas.transform, "Grenade", "BOMB",
+                new Vector2(140, 140), new Color(0.35f, 0.8f, 0.35f, 0.6f), () => _grenadeQueued = true, 26);
+            var grenImg = grenBtn.GetComponent<Image>(); grenImg.sprite = UIFactory.CircleSprite;
+            UIFactory.SetAnchoredPos(grenBtn, new Vector2(0.5f, 0f), new Vector2(165, 120));
+
+            // --- Current weapon readout (above the aim stick) ---
             _weaponText = UIFactory.CreateText(_canvas.transform, "Weapon", "CANNON", 34,
                 UIFactory.TextColor);
             _weaponText.fontStyle = FontStyle.Bold;

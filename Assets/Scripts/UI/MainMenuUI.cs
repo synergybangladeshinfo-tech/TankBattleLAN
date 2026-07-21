@@ -35,6 +35,8 @@ namespace TankBattle.UI
         readonly List<Button> _timeButtons = new List<Button>();
         readonly List<Button> _colorButtons = new List<Button>();
         readonly List<Button> _styleButtons = new List<Button>();
+        readonly List<Button> _patternButtons = new List<Button>();
+        Text _garageStats;
         float _nextHostListRefresh;
 
         // Live 3D tank preview (Garage): rendered into a texture by its own rig.
@@ -51,6 +53,7 @@ namespace TankBattle.UI
             // Restore the Garage choices before anything reads them.
             GameSession.TankColorIndex = SettingsManager.SavedTankColor;
             GameSession.TankStyleIndex = SettingsManager.SavedTankStyle;
+            GameSession.TankPatternIndex = SettingsManager.SavedTankPattern;
 
             BuildBackground();
             BuildHomePanel();
@@ -173,15 +176,15 @@ namespace TankBattle.UI
         void BuildGaragePanel()
         {
             _garagePanel = UIFactory.CreateCenterPanel(_canvas.transform, "GaragePanel",
-                UIFactory.PanelColor, new Vector2(1620, 860));
+                UIFactory.PanelColor, new Vector2(1620, 1000));
 
             var title = UIFactory.CreateText(_garagePanel, "Title", "MY TANK",
                 44, UIFactory.TextColor);
             UIFactory.SetAnchoredPos(title, new Vector2(0.5f, 1f), new Vector2(0, -45));
 
             // ---- left column: name + color + style ----
-            var left = MakeColumn(_garagePanel, "LeftCol", new Vector2(-380, -55));
-            ((RectTransform)left).sizeDelta = new Vector2(880, 720);
+            var left = MakeColumn(_garagePanel, "LeftCol", new Vector2(-380, -30));
+            ((RectTransform)left).sizeDelta = new Vector2(880, 920);
 
             var nameLabel = UIFactory.CreateText(left, "NameLabel", "PLAYER NAME",
                 28, UIFactory.TextDim);
@@ -261,10 +264,43 @@ namespace TankBattle.UI
                 _styleButtons.Add(b);
             }
 
-            _garagePreview = UIFactory.CreateText(left, "Preview", "", 30, UIFactory.TextColor);
-            ((RectTransform)_garagePreview.transform).sizeDelta = new Vector2(800, 46);
+            var patLabel = UIFactory.CreateText(left, "PatLabel", "CAMO PATTERN", 28, UIFactory.TextDim);
+            ((RectTransform)patLabel.transform).sizeDelta = new Vector2(800, 34);
 
-            UIFactory.CreateButton(left, "Back", "SAVE & BACK", new Vector2(420, 84),
+            var patRow = new GameObject("PatternRow", typeof(RectTransform));
+            patRow.transform.SetParent(left, false);
+            var patRt = (RectTransform)patRow.transform;
+            patRt.sizeDelta = new Vector2(820, 84);
+            var ph = patRow.AddComponent<HorizontalLayoutGroup>();
+            ph.spacing = 14;
+            ph.childAlignment = TextAnchor.MiddleCenter;
+            ph.childControlWidth = false; ph.childControlHeight = false;
+            ph.childForceExpandWidth = false; ph.childForceExpandHeight = false;
+
+            _patternButtons.Clear();
+            for (int i = 0; i < GameConstants.TankPatternNames.Length; i++)
+            {
+                int index = i;
+                var b = UIFactory.CreateButton(patRt, $"Pattern{i}",
+                    GameConstants.TankPatternNames[i], new Vector2(190, 76),
+                    UIFactory.PanelLight, () =>
+                    {
+                        GameSession.TankPatternIndex = index;
+                        SettingsManager.SavedTankPattern = index;
+                        HighlightGarage();
+                        RefreshPreviewTank();
+                    }, 24);
+                _patternButtons.Add(b);
+            }
+
+            _garageStats = UIFactory.CreateText(left, "Stats", "", 26, UIFactory.TextColor,
+                TextAnchor.MiddleCenter);
+            ((RectTransform)_garageStats.transform).sizeDelta = new Vector2(820, 110);
+
+            _garagePreview = UIFactory.CreateText(left, "Preview", "", 28, UIFactory.TextColor);
+            ((RectTransform)_garagePreview.transform).sizeDelta = new Vector2(800, 42);
+
+            UIFactory.CreateButton(left, "Back", "SAVE & BACK", new Vector2(420, 78),
                 UIFactory.AccentGreen, () => Show(_homePanel));
 
             // ---- right column: live rotating 3D preview ----
@@ -338,12 +374,18 @@ namespace TankBattle.UI
                 if (hull != null) hull.gameObject.SetActive(i == GameSession.TankStyleIndex);
             }
 
+            var tex = Resources.Load<Texture2D>(
+                $"Patterns/{GameConstants.TankPatternFiles[Mathf.Clamp(GameSession.TankPatternIndex, 0, GameConstants.TankPatternFiles.Length - 1)]}");
+
             Color c = GameConstants.GetPlayerColor(GameSession.TankColorIndex);
             foreach (var mr in _previewTank.GetComponentsInChildren<MeshRenderer>(true))
             {
                 var shared = mr.sharedMaterial;
                 if (shared != null && shared.name.StartsWith("Tank_Base"))
+                {
                     mr.material.color = c;
+                    if (tex != null) mr.material.mainTexture = tex;
+                }
             }
         }
 
@@ -361,14 +403,38 @@ namespace TankBattle.UI
             for (int i = 0; i < _styleButtons.Count; i++)
                 _styleButtons[i].GetComponent<Image>().color =
                     i == GameSession.TankStyleIndex ? UIFactory.Accent : UIFactory.PanelLight;
+            for (int i = 0; i < _patternButtons.Count; i++)
+                _patternButtons[i].GetComponent<Image>().color =
+                    i == GameSession.TankPatternIndex ? UIFactory.Accent : UIFactory.PanelLight;
+
+            if (_garageStats != null)
+            {
+                Vector3 s = GameConstants.TankStyleStats[
+                    Mathf.Clamp(GameSession.TankStyleIndex, 0, GameConstants.TankStyleStats.Length - 1)];
+                _garageStats.text =
+                    $"SPEED    {Bars(s.x)}\n" +
+                    $"ARMOR    {Bars(s.y)}\n" +
+                    $"AGILITY  {Bars(s.z)}";
+            }
 
             if (_garagePreview != null)
             {
                 _garagePreview.text =
                     $"{GameConstants.PlayerColorNames[GameSession.TankColorIndex]}  " +
-                    $"{GameConstants.TankStyleNames[GameSession.TankStyleIndex]}  TANK";
+                    $"{GameConstants.TankPatternNames[GameSession.TankPatternIndex]}  " +
+                    $"{GameConstants.TankStyleNames[GameSession.TankStyleIndex]}";
                 _garagePreview.color = GameConstants.PlayerColors[GameSession.TankColorIndex];
             }
+        }
+
+        static string Bars(float v)
+        {
+            // ASCII bar (the legacy font lacks block glyphs).
+            int filled = Mathf.RoundToInt(Mathf.Clamp01(v) * 10f);
+            var sb = new System.Text.StringBuilder("[");
+            for (int i = 0; i < 10; i++) sb.Append(i < filled ? '=' : '-');
+            sb.Append(']');
+            return sb.ToString();
         }
 
         // ---- Host: map + mode + time ----
