@@ -19,8 +19,9 @@ namespace TankBattle.EditorTools
         {
             EnsureFolders();
 
-            // 0. Procedural textures (all art is generated - zero binary assets).
+            // 0. Procedural textures + the shared post-processing profile.
             TextureBuilder.GenerateAll();
+            PostFXBuilder.BuildProfile();
 
             // 1. Prefabs (also creates the shared materials).
             var tank = PrefabBuilder.BuildTankPrefab();

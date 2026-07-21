@@ -87,8 +87,8 @@ namespace TankBattle.EditorTools
                 TextureBuilder.Camo, 1f, null, 0.22f, 0.05f);
             var dark = CreateTexturedMaterial("Tank_Dark", new Color(0.85f, 0.85f, 0.85f),
                 TextureBuilder.Track, 1.5f, null, 0.1f, 0f);
-            var metal = CreateTexturedMaterial("Tank_Metal", new Color(0.8f, 0.82f, 0.85f),
-                TextureBuilder.MetalPlate, 1f, null, 0.45f, 0.6f);
+            var metal = CreateTexturedMaterial("Tank_Metal", new Color(0.82f, 0.84f, 0.88f),
+                TextureBuilder.MetalPlate, 1f, null, 0.7f, 0.85f); // shinier, reflective
             return (hull, dark, metal);
         }
 

@@ -2,6 +2,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace TankBattle.EditorTools
 {
@@ -19,8 +20,8 @@ namespace TankBattle.EditorTools
             PlayerSettings.productName = "Tank Battle LAN";
             PlayerSettings.companyName = "TankBattleLAN";
             PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.tankbattlelan.game");
-            PlayerSettings.bundleVersion = "2.2.0";
-            PlayerSettings.Android.bundleVersionCode = 4;
+            PlayerSettings.bundleVersion = "2.3.0";
+            PlayerSettings.Android.bundleVersionCode = 5;
 
             // Scripting: IL2CPP release for both mainstream ABIs.
             PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);
@@ -33,6 +34,13 @@ namespace TankBattle.EditorTools
             PlayerSettings.stripEngineCode = true;
             PlayerSettings.SetManagedStrippingLevel(NamedBuildTarget.Android,
                 ManagedStrippingLevel.Low); // safe with reflection-free code
+
+            // Linear colour space + modern graphics APIs give correct lighting
+            // and make bloom / post-processing look right (needs GLES3/Vulkan).
+            PlayerSettings.colorSpace = ColorSpace.Linear;
+            PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android, false);
+            PlayerSettings.SetGraphicsAPIs(BuildTarget.Android,
+                new[] { GraphicsDeviceType.Vulkan, GraphicsDeviceType.OpenGLES3 });
 
             // OS versions.
             PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel23;

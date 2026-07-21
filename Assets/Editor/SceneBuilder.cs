@@ -206,16 +206,32 @@ namespace TankBattle.EditorTools
             var sky = CreateSkyboxMaterial(d);
             RenderSettings.skybox = sky;
 
-            // Light + flat ambient (no baking required) + distance fog.
+            // Key light (warm sun) with strong soft shadows.
             var lightGo = new GameObject("Directional Light", typeof(Light));
             var light = lightGo.GetComponent<Light>();
             light.type = LightType.Directional;
-            light.intensity = 1.15f;
-            light.color = new Color(1f, 0.97f, 0.92f); // warm sun
-            light.shadows = LightShadows.Soft; // runtime quality setting can disable
-            lightGo.transform.rotation = Quaternion.Euler(55f, -35f, 0f);
-            RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = d.Ambient;
+            light.intensity = 1.25f;
+            light.color = new Color(1f, 0.96f, 0.88f); // warm sun
+            light.shadows = LightShadows.Soft;
+            light.shadowStrength = 0.8f;
+            light.shadowBias = 0.03f;
+            light.shadowNormalBias = 0.4f;
+            lightGo.transform.rotation = Quaternion.Euler(52f, -35f, 0f);
+
+            // Cool rim/fill light from behind for depth and shape separation.
+            var rimGo = new GameObject("Rim Light", typeof(Light));
+            var rim = rimGo.GetComponent<Light>();
+            rim.type = LightType.Directional;
+            rim.intensity = 0.45f;
+            rim.color = new Color(0.55f, 0.65f, 0.9f); // cool sky bounce
+            rim.shadows = LightShadows.None;
+            rimGo.transform.rotation = Quaternion.Euler(-20f, 150f, 0f);
+
+            RenderSettings.ambientMode = AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = Color.Lerp(d.Sky, Color.white, 0.2f);
+            RenderSettings.ambientEquatorColor = d.Ambient;
+            RenderSettings.ambientGroundColor = Color.Lerp(d.Ground, Color.black, 0.4f);
+            RenderSettings.reflectionIntensity = 1f;
             RenderSettings.sun = light;
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.Linear;
@@ -277,6 +293,25 @@ namespace TankBattle.EditorTools
 
             // King of the Hill zone (auto-hidden in other modes).
             BuildKothZone(d);
+
+            // Realtime reflection probe (rendered once at load) - makes metal
+            // barrels/barrels and the shield bubble reflect the environment.
+            var probeGo = new GameObject("ReflectionProbe");
+            probeGo.transform.position = new Vector3(0f, 12f, 0f);
+            var probe = probeGo.AddComponent<ReflectionProbe>();
+            probe.mode = UnityEngine.Rendering.ReflectionProbeMode.Realtime;
+            probe.refreshMode = UnityEngine.Rendering.ReflectionProbeRefreshMode.OnAwake;
+            probe.timeSlicingMode = UnityEngine.Rendering.ReflectionProbeTimeSlicingMode.AllFacesAtOnce;
+            probe.resolution = 128;
+            probe.size = new Vector3(180f, 70f, 180f);
+            probe.boxProjection = true;
+            probe.cullingMask = ~0;
+
+            // Floating dust motes for atmosphere.
+            BuildAtmosphere(d);
+
+            // Cinematic post-processing (bloom, colour grade, AO, vignette...).
+            PostFXBuilder.ApplyToScene(cam);
 
             // Match logic (in-scene NetworkObject) + runtime-built HUD.
             var mm = new GameObject("MatchManager");
@@ -636,6 +671,59 @@ namespace TankBattle.EditorTools
             roof.transform.localScale = new Vector3(5.7f, 0.4f, 5.7f);
             roof.GetComponent<MeshRenderer>().sharedMaterial = _obstacle;
             roof.isStatic = true;
+        }
+
+        /// <summary>Slow floating dust motes drifting through the arena air.</summary>
+        static void BuildAtmosphere(MapDef d)
+        {
+            string path = $"{PrefabBuilder.MaterialDir}/FX_Motes.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null)
+            {
+                mat = new Material(Shader.Find("Legacy Shaders/Particles/Additive"));
+                AssetDatabase.CreateAsset(mat, path);
+            }
+
+            var go = new GameObject("Atmosphere", typeof(ParticleSystem));
+            go.transform.position = new Vector3(0f, 10f, 0f);
+            var ps = go.GetComponent<ParticleSystem>();
+
+            var main = ps.main;
+            main.loop = true;
+            main.playOnAwake = true;
+            main.startLifetime = 9f;
+            main.startSpeed = 0.25f;
+            main.startSize = new ParticleSystem.MinMaxCurve(0.08f, 0.22f);
+            main.startColor = new Color(1f, 0.98f, 0.9f, 0.5f);
+            main.maxParticles = 240;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+
+            var emission = ps.emission;
+            emission.rateOverTime = 26f;
+
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Box;
+            shape.scale = new Vector3(78f, 22f, 78f);
+
+            var vel = ps.velocityOverLifetime;
+            vel.enabled = true;
+            vel.space = ParticleSystemSimulationSpace.World;
+            vel.y = new ParticleSystem.MinMaxCurve(0.15f);
+            vel.x = new ParticleSystem.MinMaxCurve(-0.15f, 0.15f);
+
+            var col = ps.colorOverLifetime;
+            col.enabled = true;
+            var grad = new Gradient();
+            grad.SetKeys(
+                new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.6f, 0.3f),
+                        new GradientAlphaKey(0f, 1f) });
+            col.color = grad;
+
+            var r = ps.GetComponent<ParticleSystemRenderer>();
+            r.sharedMaterial = mat;
+            r.shadowCastingMode = ShadowCastingMode.Off;
+            r.receiveShadows = false;
         }
 
         static void Crystal(Vector3 p, int i)
