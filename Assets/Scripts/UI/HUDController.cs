@@ -50,6 +50,15 @@ namespace TankBattle.UI
             _canvas = UIFactory.CreateCanvas("HUDCanvas");
             _canvas.transform.SetParent(transform, false);
 
+            // Subtle vignette (drawn first = under every HUD element).
+            var vinGo = new GameObject("Vignette", typeof(Image));
+            vinGo.transform.SetParent(_canvas.transform, false);
+            var vin = vinGo.GetComponent<Image>();
+            vin.sprite = UIFactory.VignetteSprite;
+            vin.color = new Color(1f, 1f, 1f, 0.75f);
+            vin.raycastTarget = false;
+            UIFactory.Stretch((RectTransform)vinGo.transform);
+
             BuildControls();
             BuildStatusBar();
             BuildScoreboard();

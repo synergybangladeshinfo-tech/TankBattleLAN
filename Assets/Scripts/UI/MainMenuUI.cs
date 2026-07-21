@@ -37,6 +37,11 @@ namespace TankBattle.UI
         readonly List<Button> _styleButtons = new List<Button>();
         float _nextHostListRefresh;
 
+        // Live 3D tank preview (Garage): rendered into a texture by its own rig.
+        RenderTexture _previewRT;
+        GameObject _previewRig, _previewTank;
+        RawImage _previewImage;
+
         void Start()
         {
             UIFactory.EnsureEventSystem();
@@ -86,15 +91,26 @@ namespace TankBattle.UI
             // Live-refresh the lobby player list.
             if (_lobbyPanel.gameObject.activeSelf)
                 RefreshLobby();
+
+            // Slowly rotate the Garage's 3D preview tank.
+            if (_garagePanel != null && _garagePanel.gameObject.activeSelf && _previewTank != null)
+                _previewTank.transform.Rotate(0f, 35f * Time.deltaTime, 0f);
+        }
+
+        void OnDestroy()
+        {
+            if (_previewRT != null) { _previewRT.Release(); _previewRT = null; }
+            if (_previewRig != null) Destroy(_previewRig);
         }
 
         // ------------------------------------------------------------------ build
 
         void BuildBackground()
         {
-            UIFactory.CreatePanel(_canvas.transform, "Background",
-                new Color(0.05f, 0.07f, 0.10f, 1f), Vector2.zero, Vector2.one,
+            var bg = UIFactory.CreatePanel(_canvas.transform, "Background",
+                Color.white, Vector2.zero, Vector2.one,
                 Vector2.zero, Vector2.zero);
+            bg.GetComponent<Image>().sprite = UIFactory.MenuBackgroundSprite;
 
             var title = UIFactory.CreateText(_canvas.transform, "Title", "TANK BATTLE LAN",
                 92, UIFactory.TextColor);
@@ -139,8 +155,13 @@ namespace TankBattle.UI
                     Show(_joinPanel);
                     LanDiscovery.Instance?.StartSearch();
                 });
-            UIFactory.CreateButton(_homePanel, "Garage", "GARAGE", new Vector2(520, 90),
-                new Color(0.85f, 0.60f, 0.20f, 1f), () => Show(_garagePanel));
+            UIFactory.CreateButton(_homePanel, "Garage", "MY TANK", new Vector2(520, 90),
+                new Color(0.85f, 0.60f, 0.20f, 1f), () =>
+                {
+                    EnsurePreviewRig();
+                    RefreshPreviewTank();
+                    Show(_garagePanel);
+                });
             UIFactory.CreateButton(_homePanel, "Settings", "SETTINGS", new Vector2(520, 90),
                 UIFactory.PanelLight, () => Show(_settingsPanel));
             UIFactory.CreateButton(_homePanel, "Quit", "QUIT", new Vector2(520, 90),
@@ -152,27 +173,45 @@ namespace TankBattle.UI
         void BuildGaragePanel()
         {
             _garagePanel = UIFactory.CreateCenterPanel(_canvas.transform, "GaragePanel",
-                UIFactory.PanelColor, new Vector2(980, 800));
-            UIFactory.AddVerticalLayout(_garagePanel, 18, new RectOffset(30, 30, 24, 24));
+                UIFactory.PanelColor, new Vector2(1620, 860));
 
-            var title = UIFactory.CreateText(_garagePanel, "Title", "GARAGE - YOUR TANK",
+            var title = UIFactory.CreateText(_garagePanel, "Title", "MY TANK",
                 44, UIFactory.TextColor);
-            ((RectTransform)title.transform).sizeDelta = new Vector2(800, 60);
+            UIFactory.SetAnchoredPos(title, new Vector2(0.5f, 1f), new Vector2(0, -45));
 
-            var colorLabel = UIFactory.CreateText(_garagePanel, "ColorLabel", "TANK COLOR",
-                30, UIFactory.TextDim);
-            ((RectTransform)colorLabel.transform).sizeDelta = new Vector2(800, 40);
+            // ---- left column: name + color + style ----
+            var left = MakeColumn(_garagePanel, "LeftCol", new Vector2(-380, -55));
+            ((RectTransform)left).sizeDelta = new Vector2(880, 720);
+
+            var nameLabel = UIFactory.CreateText(left, "NameLabel", "PLAYER NAME",
+                28, UIFactory.TextDim);
+            ((RectTransform)nameLabel.transform).sizeDelta = new Vector2(800, 36);
+
+            var garageName = UIFactory.CreateInputField(left, "GarageName", "Your name...",
+                new Vector2(600, 78));
+            garageName.text = GameSession.PlayerName;
+            garageName.onEndEdit.AddListener(v =>
+            {
+                if (string.IsNullOrWhiteSpace(v)) v = "Player" + Random.Range(100, 999);
+                GameSession.PlayerName = v.Trim();
+                SettingsManager.SavedPlayerName = GameSession.PlayerName;
+                if (_nameField != null) _nameField.text = GameSession.PlayerName;
+            });
+
+            var colorLabel = UIFactory.CreateText(left, "ColorLabel", "TANK COLOR",
+                28, UIFactory.TextDim);
+            ((RectTransform)colorLabel.transform).sizeDelta = new Vector2(800, 36);
 
             // Two rows of four color swatches.
             _colorButtons.Clear();
             for (int row = 0; row < 2; row++)
             {
                 var rowGo = new GameObject($"ColorRow{row}", typeof(RectTransform));
-                rowGo.transform.SetParent(_garagePanel, false);
+                rowGo.transform.SetParent(left, false);
                 var rowRt = (RectTransform)rowGo.transform;
-                rowRt.sizeDelta = new Vector2(840, 96);
+                rowRt.sizeDelta = new Vector2(820, 92);
                 var h = rowGo.AddComponent<HorizontalLayoutGroup>();
-                h.spacing = 18;
+                h.spacing = 16;
                 h.childAlignment = TextAnchor.MiddleCenter;
                 h.childControlWidth = false; h.childControlHeight = false;
                 h.childForceExpandWidth = false; h.childForceExpandHeight = false;
@@ -181,26 +220,27 @@ namespace TankBattle.UI
                 {
                     int index = row * 4 + i;
                     var b = UIFactory.CreateButton(rowRt, $"Color{index}", "",
-                        new Vector2(180, 88), GameConstants.PlayerColors[index], () =>
+                        new Vector2(180, 84), GameConstants.PlayerColors[index], () =>
                         {
                             GameSession.TankColorIndex = index;
                             SettingsManager.SavedTankColor = index;
                             HighlightGarage();
+                            RefreshPreviewTank();
                         }, 24);
                     _colorButtons.Add(b);
                 }
             }
 
-            var styleLabel = UIFactory.CreateText(_garagePanel, "StyleLabel", "BODY STYLE",
-                30, UIFactory.TextDim);
-            ((RectTransform)styleLabel.transform).sizeDelta = new Vector2(800, 40);
+            var styleLabel = UIFactory.CreateText(left, "StyleLabel", "BODY STYLE",
+                28, UIFactory.TextDim);
+            ((RectTransform)styleLabel.transform).sizeDelta = new Vector2(800, 36);
 
             var styleRow = new GameObject("StyleRow", typeof(RectTransform));
-            styleRow.transform.SetParent(_garagePanel, false);
+            styleRow.transform.SetParent(left, false);
             var styleRt = (RectTransform)styleRow.transform;
-            styleRt.sizeDelta = new Vector2(840, 96);
+            styleRt.sizeDelta = new Vector2(820, 92);
             var sh = styleRow.AddComponent<HorizontalLayoutGroup>();
-            sh.spacing = 18;
+            sh.spacing = 16;
             sh.childAlignment = TextAnchor.MiddleCenter;
             sh.childControlWidth = false; sh.childControlHeight = false;
             sh.childForceExpandWidth = false; sh.childForceExpandHeight = false;
@@ -210,23 +250,101 @@ namespace TankBattle.UI
             {
                 int index = i;
                 var b = UIFactory.CreateButton(styleRt, $"Style{i}",
-                    GameConstants.TankStyleNames[i], new Vector2(262, 88),
+                    GameConstants.TankStyleNames[i], new Vector2(258, 84),
                     UIFactory.PanelLight, () =>
                     {
                         GameSession.TankStyleIndex = index;
                         SettingsManager.SavedTankStyle = index;
                         HighlightGarage();
+                        RefreshPreviewTank();
                     }, 28);
                 _styleButtons.Add(b);
             }
 
-            _garagePreview = UIFactory.CreateText(_garagePanel, "Preview", "", 30, UIFactory.TextColor);
-            ((RectTransform)_garagePreview.transform).sizeDelta = new Vector2(800, 50);
+            _garagePreview = UIFactory.CreateText(left, "Preview", "", 30, UIFactory.TextColor);
+            ((RectTransform)_garagePreview.transform).sizeDelta = new Vector2(800, 46);
 
-            UIFactory.CreateButton(_garagePanel, "Back", "SAVE & BACK", new Vector2(360, 80),
+            UIFactory.CreateButton(left, "Back", "SAVE & BACK", new Vector2(420, 84),
                 UIFactory.AccentGreen, () => Show(_homePanel));
 
+            // ---- right column: live rotating 3D preview ----
+            var frame = UIFactory.CreatePanel(_garagePanel, "PreviewFrame",
+                UIFactory.PanelLight, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                Vector2.zero, Vector2.zero);
+            frame.sizeDelta = new Vector2(560, 560);
+            frame.anchoredPosition = new Vector2(430, -40);
+
+            var rawGo = new GameObject("Preview3D", typeof(RawImage));
+            rawGo.transform.SetParent(frame, false);
+            _previewImage = rawGo.GetComponent<RawImage>();
+            _previewImage.raycastTarget = false;
+            UIFactory.Stretch((RectTransform)rawGo.transform,
+                new Vector2(8, 8), new Vector2(-8, -8));
+
+            var hint = UIFactory.CreateText(_garagePanel, "Hint", "LIVE PREVIEW",
+                24, UIFactory.TextDim);
+            UIFactory.SetAnchoredPos(hint, new Vector2(0.5f, 0.5f), new Vector2(430, -350));
+
             HighlightGarage();
+        }
+
+        // ---- 3D preview rig (renders the real tank prefab into a texture) ----
+
+        void EnsurePreviewRig()
+        {
+            if (_previewRig != null) return;
+
+            _previewRT = new RenderTexture(512, 512, 16);
+            _previewRig = new GameObject("TankPreviewRig");
+            _previewRig.transform.position = new Vector3(0f, -80f, 0f); // out of sight
+
+            var camGo = new GameObject("PreviewCam");
+            camGo.transform.SetParent(_previewRig.transform, false);
+            camGo.transform.localPosition = new Vector3(0f, 2.4f, -6.5f);
+            camGo.transform.localRotation = Quaternion.Euler(14f, 0f, 0f);
+            var cam = camGo.AddComponent<Camera>();
+            cam.targetTexture = _previewRT;
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = new Color(0.09f, 0.12f, 0.17f, 1f);
+            cam.fieldOfView = 32f;
+            cam.farClipPlane = 50f;
+
+            var lightGo = new GameObject("PreviewLight");
+            lightGo.transform.SetParent(_previewRig.transform, false);
+            lightGo.transform.localRotation = Quaternion.Euler(45f, -35f, 0f);
+            var l = lightGo.AddComponent<Light>();
+            l.type = LightType.Directional;
+            l.intensity = 1.25f;
+            l.color = new Color(1f, 0.97f, 0.92f);
+
+            var prefab = Resources.Load<GameObject>("TankPreview");
+            if (prefab != null)
+            {
+                _previewTank = Instantiate(prefab, _previewRig.transform);
+                _previewTank.transform.localPosition = new Vector3(0f, 0.15f, 0f);
+            }
+
+            if (_previewImage != null) _previewImage.texture = _previewRT;
+        }
+
+        /// <summary>Apply the currently selected style + color to the preview tank.</summary>
+        void RefreshPreviewTank()
+        {
+            if (_previewTank == null) return;
+
+            for (int i = 0; i < GameConstants.TankStyleNames.Length; i++)
+            {
+                var hull = _previewTank.transform.Find($"Hull_{i}");
+                if (hull != null) hull.gameObject.SetActive(i == GameSession.TankStyleIndex);
+            }
+
+            Color c = GameConstants.GetPlayerColor(GameSession.TankColorIndex);
+            foreach (var mr in _previewTank.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                var shared = mr.sharedMaterial;
+                if (shared != null && shared.name.StartsWith("Tank_Base"))
+                    mr.material.color = c;
+            }
         }
 
         void HighlightGarage()

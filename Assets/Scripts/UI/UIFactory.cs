@@ -60,6 +60,62 @@ namespace TankBattle.UI
             }
         }
 
+        static Sprite _vignette;
+        /// <summary>Soft dark-corner vignette overlay (subtle "cinematic" feel).</summary>
+        public static Sprite VignetteSprite
+        {
+            get
+            {
+                if (_vignette != null) return _vignette;
+                const int size = 256;
+                var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+                var px = new Color32[size * size];
+                Vector2 c = new Vector2(size * 0.5f, size * 0.5f);
+                float maxD = size * 0.72f;
+                for (int y = 0; y < size; y++)
+                    for (int x = 0; x < size; x++)
+                    {
+                        float d = Vector2.Distance(new Vector2(x, y), c) / maxD;
+                        float a = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(d - 0.45f) / 0.55f);
+                        px[y * size + x] = new Color(0f, 0f, 0f, a);
+                    }
+                tex.SetPixels32(px);
+                tex.Apply();
+                _vignette = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+                return _vignette;
+            }
+        }
+
+        static Sprite _menuBg;
+        /// <summary>Navy gradient + faint grid for the main-menu backdrop.</summary>
+        public static Sprite MenuBackgroundSprite
+        {
+            get
+            {
+                if (_menuBg != null) return _menuBg;
+                const int size = 256;
+                var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+                var px = new Color32[size * size];
+                Color top = new Color(0.045f, 0.065f, 0.10f);
+                Color bottom = new Color(0.10f, 0.16f, 0.24f);
+                for (int y = 0; y < size; y++)
+                {
+                    Color row = Color.Lerp(bottom, top, y / (float)(size - 1));
+                    for (int x = 0; x < size; x++)
+                    {
+                        Color cpx = row;
+                        if (x % 32 == 0 || y % 32 == 0)
+                            cpx = Color.Lerp(row, Color.white, 0.03f); // faint grid
+                        px[y * size + x] = cpx;
+                    }
+                }
+                tex.SetPixels32(px);
+                tex.Apply();
+                _menuBg = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+                return _menuBg;
+            }
+        }
+
         // ---- canvas / panels ----
 
         /// <summary>Full-screen scaled canvas (1920x1080 reference).</summary>
