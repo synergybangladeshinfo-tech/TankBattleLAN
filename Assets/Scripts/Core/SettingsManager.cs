@@ -14,6 +14,8 @@ namespace TankBattle.Core
         const string KeySfx = "tb_sfx_on";
         const string KeyQuality = "tb_quality"; // 0 = Low, 1 = Medium, 2 = High
         const string KeyName = "tb_player_name";
+        const string KeyTankColor = "tb_tank_color";
+        const string KeyTankStyle = "tb_tank_style";
 
         public static bool MusicOn
         {
@@ -38,6 +40,20 @@ namespace TankBattle.Core
         {
             get => PlayerPrefs.GetString(KeyName, "");
             set { PlayerPrefs.SetString(KeyName, value); PlayerPrefs.Save(); }
+        }
+
+        /// <summary>Garage: saved tank color index.</summary>
+        public static int SavedTankColor
+        {
+            get => PlayerPrefs.GetInt(KeyTankColor, 0);
+            set { PlayerPrefs.SetInt(KeyTankColor, value); PlayerPrefs.Save(); }
+        }
+
+        /// <summary>Garage: saved tank body style index.</summary>
+        public static int SavedTankStyle
+        {
+            get => PlayerPrefs.GetInt(KeyTankStyle, 0);
+            set { PlayerPrefs.SetInt(KeyTankStyle, value); PlayerPrefs.Save(); }
         }
 
         /// <summary>Raised whenever any setting changes (AudioManager listens).</summary>
