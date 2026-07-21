@@ -12,8 +12,9 @@ namespace TankBattle.Networking
     public struct PlayerInfo
     {
         public string Name;
-        public int ColorIndex;  // Garage color choice
-        public int StyleIndex;  // Garage body style choice
+        public int ColorIndex;    // Garage color choice
+        public int StyleIndex;    // Garage body style choice
+        public int PatternIndex;  // Garage camo pattern choice
     }
 
     /// <summary>
@@ -33,10 +34,12 @@ namespace TankBattle.Networking
         [SerializeField] GameObject tankPrefab;
         [SerializeField] GameObject bulletPrefab;
         [SerializeField] GameObject pickupPrefab;
+        [SerializeField] GameObject grenadePrefab;
 
         public GameObject TankPrefab => tankPrefab;
         public GameObject BulletPrefab => bulletPrefab;
         public GameObject PickupPrefab => pickupPrefab;
+        public GameObject GrenadePrefab => grenadePrefab;
 
         NetworkManager _nm;
         UnityTransport _transport;
@@ -63,6 +66,7 @@ namespace TankBattle.Networking
             if (tankPrefab != null) _nm.AddNetworkPrefab(tankPrefab);
             if (bulletPrefab != null) _nm.AddNetworkPrefab(bulletPrefab);
             if (pickupPrefab != null) _nm.AddNetworkPrefab(pickupPrefab);
+            if (grenadePrefab != null) _nm.AddNetworkPrefab(grenadePrefab);
 
             _nm.ConnectionApprovalCallback = ApprovalCheck;
             _nm.OnClientDisconnectCallback += OnClientDisconnect;
@@ -74,9 +78,10 @@ namespace TankBattle.Networking
             if (_nm != null) _nm.OnClientDisconnectCallback -= OnClientDisconnect;
         }
 
-        /// <summary>"name|colorIndex|styleIndex" payload for the local player.</summary>
+        /// <summary>"name|color|style|pattern" payload for the local player.</summary>
         static byte[] LocalPayload() => Encoding.UTF8.GetBytes(
-            $"{GameSession.PlayerName}|{GameSession.TankColorIndex}|{GameSession.TankStyleIndex}");
+            $"{GameSession.PlayerName}|{GameSession.TankColorIndex}|" +
+            $"{GameSession.TankStyleIndex}|{GameSession.TankPatternIndex}");
 
         // ------------------------------------------------------------------ host
 
@@ -103,7 +108,8 @@ namespace TankBattle.Networking
             {
                 Name = GameSession.PlayerName,
                 ColorIndex = GameSession.TankColorIndex,
-                StyleIndex = GameSession.TankStyleIndex
+                StyleIndex = GameSession.TankStyleIndex,
+                PatternIndex = GameSession.TankPatternIndex
             };
 
             // Answer discovery probes with live lobby info (not in solo mode).
@@ -162,7 +168,7 @@ namespace TankBattle.Networking
                 return;
             }
 
-            var info = new PlayerInfo { Name = "Player", ColorIndex = 0, StyleIndex = 0 };
+            var info = new PlayerInfo { Name = "Player", ColorIndex = 0, StyleIndex = 0, PatternIndex = 0 };
             if (request.Payload != null && request.Payload.Length > 0)
             {
                 string raw = Encoding.UTF8.GetString(request.Payload);
@@ -176,6 +182,8 @@ namespace TankBattle.Networking
                     info.ColorIndex = Mathf.Clamp(c, 0, GameConstants.PlayerColors.Length - 1);
                 if (parts.Length > 2 && int.TryParse(parts[2], out int s))
                     info.StyleIndex = Mathf.Clamp(s, 0, GameConstants.TankStyleNames.Length - 1);
+                if (parts.Length > 3 && int.TryParse(parts[3], out int p))
+                    info.PatternIndex = Mathf.Clamp(p, 0, GameConstants.TankPatternNames.Length - 1);
             }
             _players[request.ClientNetworkId] = info;
 
