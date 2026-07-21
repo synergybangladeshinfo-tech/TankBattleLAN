@@ -39,10 +39,33 @@ namespace TankBattle.Gameplay
         bool _localBound; // camera + HUD attached (retried until the scene is ready)
         bool _isBot;      // cached: AI-driven tank (server drives it, not input)
 
+        ParticleSystem _dust;   // track dust, emission driven by movement speed
+        Vector3 _lastDustPos;
+
         void Awake()
         {
             _cc = GetComponent<CharacterController>();
             _health = GetComponent<TankHealth>();
+            foreach (var ps in GetComponentsInChildren<ParticleSystem>(true))
+                if (ps.name == "DustPS") { _dust = ps; break; }
+            _lastDustPos = transform.position;
+        }
+
+        /// <summary>
+        /// Kick up dust while driving - runs on EVERY peer by measuring how far
+        /// the (replicated) transform moved, so remote tanks smoke up too.
+        /// </summary>
+        void LateUpdate()
+        {
+            if (_dust == null) return;
+            Vector3 delta = transform.position - _lastDustPos;
+            _lastDustPos = transform.position;
+            delta.y = 0f;
+            float speed = Time.deltaTime > 0f ? delta.magnitude / Time.deltaTime : 0f;
+
+            var emission = _dust.emission;
+            bool moving = speed > 1.2f && (_health == null || !_health.IsDead.Value);
+            emission.rateOverTime = moving ? Mathf.Min(28f, speed * 3.5f) : 0f;
         }
 
         public override void OnNetworkSpawn()
@@ -140,7 +163,11 @@ namespace TankBattle.Gameplay
             }
         }
 
-        /// <summary>Tint every hull mesh (skip health bar, name tag and particles).</summary>
+        /// <summary>
+        /// Tint only the camo hull panels (material "Tank_Base") with the player
+        /// color - tracks stay rubber-dark and steel parts stay metallic, which
+        /// reads far better than tinting the whole tank.
+        /// </summary>
         void ApplyColor(int index)
         {
             if (index < 0) return;
@@ -148,6 +175,8 @@ namespace TankBattle.Gameplay
             foreach (var r in GetComponentsInChildren<MeshRenderer>(true))
             {
                 if (r.GetComponentInParent<Billboard>() != null) continue; // bar / name tag
+                var shared = r.sharedMaterial;
+                if (shared == null || !shared.name.StartsWith("Tank_Base")) continue;
                 r.material.color = c;
             }
             if (_nameTag != null) _nameTag.color = Color.Lerp(c, Color.white, 0.35f);
