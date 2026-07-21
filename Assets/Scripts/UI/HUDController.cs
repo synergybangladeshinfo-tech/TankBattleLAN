@@ -33,6 +33,9 @@ namespace TankBattle.UI
         int _lastTickSecond = -1;
         TankController _localTank;
         TankShooting _localShooting;
+        TurretAim _localTurret;
+        Image _crosshair;
+        RectTransform _targetMarker;
 
         void Awake()
         {
@@ -60,6 +63,7 @@ namespace TankBattle.UI
             UIFactory.Stretch((RectTransform)vinGo.transform);
 
             BuildControls();
+            BuildTargeting();
             BuildStatusBar();
             BuildScoreboard();
             BuildPauseMenu();
@@ -123,6 +127,9 @@ namespace TankBattle.UI
                         : "Respawning...");
             }
 
+            // Lock-on target marker follows the enemy the turret is tracking.
+            UpdateTargeting();
+
             // Win screen once the match ends.
             if (match.MatchEnded.Value && !_winShown) ShowWinScreen();
         }
@@ -132,6 +139,52 @@ namespace TankBattle.UI
         {
             _localTank = tank;
             _localShooting = tank != null ? tank.GetComponent<TankShooting>() : null;
+            _localTurret = tank != null ? tank.GetComponent<TurretAim>() : null;
+        }
+
+        // --- targeting reticle: centre crosshair + lock marker on the enemy ---
+
+        void BuildTargeting()
+        {
+            var chGo = new GameObject("Crosshair", typeof(Image));
+            chGo.transform.SetParent(_canvas.transform, false);
+            _crosshair = chGo.GetComponent<Image>();
+            _crosshair.sprite = UIFactory.ReticleSprite;
+            _crosshair.color = new Color(1f, 1f, 1f, 0.45f);
+            _crosshair.raycastTarget = false;
+            ((RectTransform)chGo.transform).sizeDelta = new Vector2(66, 66);
+            UIFactory.SetAnchoredPos(_crosshair, new Vector2(0.5f, 0.5f), Vector2.zero);
+
+            var tmGo = new GameObject("TargetMarker", typeof(Image));
+            tmGo.transform.SetParent(_canvas.transform, false);
+            var tm = tmGo.GetComponent<Image>();
+            tm.sprite = UIFactory.ReticleSprite;
+            tm.color = new Color(1f, 0.28f, 0.22f, 0.95f); // red lock
+            tm.raycastTarget = false;
+            _targetMarker = (RectTransform)tmGo.transform;
+            _targetMarker.sizeDelta = new Vector2(120, 120);
+            tmGo.SetActive(false);
+        }
+
+        void UpdateTargeting()
+        {
+            if (_targetMarker == null) return;
+            var tgt = _localTurret != null ? _localTurret.CurrentTarget : null;
+            var cam = Camera.main;
+            if (tgt != null && cam != null)
+            {
+                Vector3 sp = cam.WorldToScreenPoint(tgt.position + Vector3.up * 1.4f);
+                if (sp.z > 0f)
+                {
+                    if (!_targetMarker.gameObject.activeSelf) _targetMarker.gameObject.SetActive(true);
+                    _targetMarker.position = sp;   // screen-space overlay canvas
+                    // Gentle pulse so the lock reads clearly.
+                    float s = 1f + Mathf.Sin(Time.time * 6f) * 0.08f;
+                    _targetMarker.localScale = new Vector3(s, s, 1f);
+                    return;
+                }
+            }
+            if (_targetMarker.gameObject.activeSelf) _targetMarker.gameObject.SetActive(false);
         }
 
         /// <summary>One-line, mode-specific status under the timer.</summary>

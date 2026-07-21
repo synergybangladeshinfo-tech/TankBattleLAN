@@ -86,6 +86,38 @@ namespace TankBattle.UI
             }
         }
 
+        static Sprite _reticle;
+        /// <summary>Targeting reticle: a ring plus a small centre crosshair (white, tintable).</summary>
+        public static Sprite ReticleSprite
+        {
+            get
+            {
+                if (_reticle != null) return _reticle;
+                const int size = 128;
+                var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+                var px = new Color32[size * size];
+                float cx = size * 0.5f, cy = size * 0.5f;
+                float rOut = size * 0.42f, rIn = size * 0.33f;
+                float tick = size * 0.13f;
+                for (int y = 0; y < size; y++)
+                    for (int x = 0; x < size; x++)
+                    {
+                        float dx = x + 0.5f - cx, dy = y + 0.5f - cy;
+                        float d = Mathf.Sqrt(dx * dx + dy * dy);
+                        float a = 0f;
+                        if (d <= rOut && d >= rIn)                              // ring band
+                            a = Mathf.Clamp01(Mathf.Min(rOut - d, d - rIn) + 1f);
+                        if (Mathf.Abs(dx) < 2f && Mathf.Abs(dy) < tick) a = 1f; // vertical tick
+                        if (Mathf.Abs(dy) < 2f && Mathf.Abs(dx) < tick) a = 1f; // horizontal tick
+                        px[y * size + x] = new Color(1f, 1f, 1f, Mathf.Clamp01(a));
+                    }
+                tex.SetPixels32(px);
+                tex.Apply();
+                _reticle = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+                return _reticle;
+            }
+        }
+
         static Sprite _menuBg;
         /// <summary>Navy gradient + faint grid for the main-menu backdrop.</summary>
         public static Sprite MenuBackgroundSprite
