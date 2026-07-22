@@ -297,13 +297,16 @@ namespace TankBattle.EditorTools
         static Texture2D Import(string path, bool normal)
         {
             AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
-            var imp = (TextureImporter)AssetImporter.GetAtPath(path);
-            imp.wrapMode = TextureWrapMode.Repeat;
-            imp.maxTextureSize = Size;
-            imp.mipmapEnabled = true;
-            imp.anisoLevel = 4;
-            if (normal) imp.textureType = TextureImporterType.NormalMap;
-            imp.SaveAndReimport();
+            var imp = AssetImporter.GetAtPath(path) as TextureImporter;
+            if (imp != null)
+            {
+                imp.wrapMode = TextureWrapMode.Repeat;
+                imp.maxTextureSize = Size;
+                imp.mipmapEnabled = true;
+                imp.anisoLevel = 4;
+                if (normal) imp.textureType = TextureImporterType.NormalMap;
+                imp.SaveAndReimport();
+            }
             return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
         }
 
