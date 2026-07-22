@@ -116,6 +116,28 @@ namespace TankBattle.Core
         /// <summary>Tank body styles built into the tank prefab (Hull_0..Hull_2).</summary>
         public static readonly string[] TankStyleNames = { "STANDARD", "HEAVY", "SCOUT" };
 
+        /// <summary>Selectable hull camo patterns (Resources/Patterns/*).</summary>
+        public static readonly string[] TankPatternNames = { "PLAIN", "CAMO", "HEX", "STRIPE" };
+        public static readonly string[] TankPatternFiles = { "Plain", "Camo", "Hex", "Stripe" };
+
+        /// <summary>Per-style stat bars for the Garage (0..1): speed, armor, agility.</summary>
+        public static readonly Vector3[] TankStyleStats =
+        {
+            new Vector3(0.70f, 0.60f, 0.65f), // Standard - balanced
+            new Vector3(0.50f, 1.00f, 0.40f), // Heavy    - tanky, slow
+            new Vector3(1.00f, 0.35f, 0.95f)  // Scout    - fast, fragile
+        };
+
+        // ---- Mini-Militia-style abilities ----
+        public const float DashSpeedMultiplier = 2.6f;
+        public const float DashDuration = 0.35f;
+        public const float DashCooldown = 4.5f;
+        public const int RamDamage = 35;            // damage from dashing into an enemy
+        public const float GrenadeCooldown = 5f;
+        public const int GrenadeDamage = 55;
+        public const float GrenadeSplashRadius = 5.5f;
+        public const float GrenadeFuse = 1.5f;      // seconds before it blows
+
         /// <summary>Per-style (moveSpeed, turnSpeed) multipliers - small, fair differences.</summary>
         public static readonly Vector2[] TankStyleSpeed =
         {

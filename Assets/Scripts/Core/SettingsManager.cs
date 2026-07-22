@@ -16,6 +16,7 @@ namespace TankBattle.Core
         const string KeyName = "tb_player_name";
         const string KeyTankColor = "tb_tank_color";
         const string KeyTankStyle = "tb_tank_style";
+        const string KeyTankPattern = "tb_tank_pattern";
 
         public static bool MusicOn
         {
@@ -54,6 +55,13 @@ namespace TankBattle.Core
         {
             get => PlayerPrefs.GetInt(KeyTankStyle, 0);
             set { PlayerPrefs.SetInt(KeyTankStyle, value); PlayerPrefs.Save(); }
+        }
+
+        /// <summary>Garage: saved hull pattern index.</summary>
+        public static int SavedTankPattern
+        {
+            get => PlayerPrefs.GetInt(KeyTankPattern, 0);
+            set { PlayerPrefs.SetInt(KeyTankPattern, value); PlayerPrefs.Save(); }
         }
 
         /// <summary>Raised whenever any setting changes (AudioManager listens).</summary>
