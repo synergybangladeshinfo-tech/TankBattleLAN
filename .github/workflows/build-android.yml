@@ -55,11 +55,15 @@ jobs:
         with:
           build-target: Android
           log-name: build
+          # NOTE: do NOT pass -logFile here. unity-action manages its own log
+          # file and tails it; passing "-logFile -" makes Unity write to stdout
+          # so the action's tail finds an empty/locked file, times out, and the
+          # real Unity errors (compile errors, exceptions) never appear in the
+          # workflow log. Letting the action own the log makes failures visible.
           args: >-
             -quit -batchmode -nographics
             -executeMethod TankBattle.EditorTools.CiBuild.Build
             -customBuildPath build/Android/TankBattleLAN.apk
-            -logFile -
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
