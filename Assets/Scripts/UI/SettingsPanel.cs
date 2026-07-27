@@ -14,7 +14,7 @@ namespace TankBattle.UI
         public static RectTransform Build(Transform parent, System.Action onBack)
         {
             var root = UIFactory.CreateCenterPanel(parent, "SettingsPanel",
-                UIFactory.PanelColor, new Vector2(700, 640));
+                UIFactory.PanelColor, new Vector2(700, 720));
             UIFactory.AddVerticalLayout(root, 24, new RectOffset(40, 40, 30, 30));
 
             var title = UIFactory.CreateText(root, "Title", "SETTINGS", 44, UIFactory.TextColor);
@@ -24,6 +24,8 @@ namespace TankBattle.UI
                 v => SettingsManager.MusicOn = v);
             UIFactory.CreateToggle(root, "SfxToggle", "Sound Effects", SettingsManager.SfxOn,
                 v => SettingsManager.SfxOn = v);
+            UIFactory.CreateToggle(root, "VibrateToggle", "Vibration", SettingsManager.VibrationOn,
+                v => SettingsManager.VibrationOn = v);
 
             var qLabel = UIFactory.CreateText(root, "QualityLabel", "Graphics Quality", 32,
                 UIFactory.TextDim);

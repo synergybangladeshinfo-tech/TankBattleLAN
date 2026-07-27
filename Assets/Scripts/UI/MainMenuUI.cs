@@ -34,6 +34,8 @@ namespace TankBattle.UI
         readonly List<Button> _mapButtons = new List<Button>();
         readonly List<Button> _modeButtons = new List<Button>();
         readonly List<Button> _timeButtons = new List<Button>();
+        readonly List<Button> _diffButtons = new List<Button>();
+        Text _diffLabel, _diffHint;
         readonly List<Button> _colorButtons = new List<Button>();
         readonly List<Button> _styleButtons = new List<Button>();
         readonly List<Button> _patternButtons = new List<Button>();
@@ -56,6 +58,7 @@ namespace TankBattle.UI
             GameSession.TankColorIndex = SettingsManager.SavedTankColor;
             GameSession.TankStyleIndex = SettingsManager.SavedTankStyle;
             GameSession.TankPatternIndex = SettingsManager.SavedTankPattern;
+            GameSession.BotDifficulty = SettingsManager.SavedBotDifficulty;
 
             BuildBackground();
             BuildHomePanel();
@@ -662,8 +665,40 @@ namespace TankBattle.UI
                 _timeButtons.Add(b);
             }
 
+            // --- AI difficulty (solo mode) ---
+            _diffLabel = UIFactory.CreateText(timeCol, "DiffLabel", "BOT DIFFICULTY", 30,
+                UIFactory.TextDim);
+            ((RectTransform)_diffLabel.transform).sizeDelta = new Vector2(480, 40);
+
+            var diffRow = new GameObject("DiffRow", typeof(RectTransform));
+            diffRow.transform.SetParent(timeCol, false);
+            ((RectTransform)diffRow.transform).sizeDelta = new Vector2(480, 66);
+            var dh = diffRow.AddComponent<HorizontalLayoutGroup>();
+            dh.spacing = 10;
+            dh.childAlignment = TextAnchor.MiddleCenter;
+            dh.childControlWidth = false; dh.childControlHeight = false;
+            dh.childForceExpandWidth = false; dh.childForceExpandHeight = false;
+
+            _diffButtons.Clear();
+            for (int i = 0; i < GameConstants.BotDifficultyNames.Length; i++)
+            {
+                int index = i;
+                var b = UIFactory.CreateButton(diffRow.transform, $"Diff{i}",
+                    GameConstants.BotDifficultyNames[i], new Vector2(152, 62),
+                    UIFactory.PanelLight, () =>
+                    {
+                        GameSession.BotDifficulty = index;
+                        SettingsManager.SavedBotDifficulty = index;
+                        HighlightSelectors();
+                    }, 24);
+                _diffButtons.Add(b);
+            }
+
+            _diffHint = UIFactory.CreateText(timeCol, "DiffHint", "", 22, UIFactory.TextDim);
+            ((RectTransform)_diffHint.transform).sizeDelta = new Vector2(480, 34);
+
             var spacer = UIFactory.CreateText(timeCol, "Spacer", "", 10, UIFactory.TextDim);
-            ((RectTransform)spacer.transform).sizeDelta = new Vector2(480, 14);
+            ((RectTransform)spacer.transform).sizeDelta = new Vector2(480, 8);
 
             var startBtn = UIFactory.CreateButton(timeCol, "StartHost", "START HOSTING",
                 new Vector2(480, 92), UIFactory.Accent, () =>
@@ -844,8 +879,22 @@ namespace TankBattle.UI
             for (int i = 0; i < _timeButtons.Count; i++)
                 _timeButtons[i].GetComponent<Image>().color =
                     i == _selectedTime ? UIFactory.Accent : UIFactory.PanelLight;
+            for (int i = 0; i < _diffButtons.Count; i++)
+                _diffButtons[i].GetComponent<Image>().color =
+                    i == GameSession.BotDifficulty ? UIFactory.Accent : UIFactory.PanelLight;
+
             if (_modeHintText != null)
                 _modeHintText.text = GameConstants.GameModeHints[_selectedMode];
+            if (_diffHint != null)
+                _diffHint.text = GameConstants.BotDifficultyHints[
+                    Mathf.Clamp(GameSession.BotDifficulty, 0,
+                                GameConstants.BotDifficultyHints.Length - 1)];
+
+            // Bot difficulty only matters when you are playing against bots.
+            if (_diffLabel != null) _diffLabel.gameObject.SetActive(_soloIntent);
+            if (_diffHint != null) _diffHint.gameObject.SetActive(_soloIntent);
+            for (int i = 0; i < _diffButtons.Count; i++)
+                _diffButtons[i].gameObject.SetActive(_soloIntent);
         }
 
         void Show(RectTransform panel)

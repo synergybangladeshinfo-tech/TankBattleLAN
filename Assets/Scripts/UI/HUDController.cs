@@ -56,7 +56,9 @@ namespace TankBattle.UI
         Text _timerText, _modeText, _killsText, _respawnText, _weaponText;
         RectTransform _scoreboardPanel, _pausePanel, _winPanel, _settingsPanel;
         RectTransform _hoverFuelBar;
-        Text _scoreboardText, _winTitle, _winBoard, _xpText;
+        Text _scoreboardText, _winTitle, _winBoard, _xpText, _countdownText;
+        RectTransform _chatPanel;
+        int _lastCountdownShown = -1;
         float _respawnUntil;
         bool _winShown;
         int _lastTickSecond = -1;
@@ -103,6 +105,8 @@ namespace TankBattle.UI
             BuildPauseMenu();
             BuildWinScreen();
             BuildRespawnOverlay();
+            BuildCountdown();
+            BuildQuickChat();
 
             AudioManager.Instance?.PlayBattleMusic();
         }
@@ -111,6 +115,8 @@ namespace TankBattle.UI
         {
             var match = MatchManager.Instance;
             if (match == null || !match.IsSpawned) return;
+
+            UpdateCountdown(match);
 
             // Timer (mm:ss) + last-10-seconds ticking.
             int secs = Mathf.CeilToInt(match.TimeRemaining.Value);
@@ -456,6 +462,95 @@ namespace TankBattle.UI
             UIFactory.SetAnchoredPos(pauseBtn, new Vector2(1f, 1f), new Vector2(-30, -30));
         }
 
+        /// <summary>Big centre "3 - 2 - 1 - FIGHT!" banner.</summary>
+        void BuildCountdown()
+        {
+            _countdownText = UIFactory.CreateText(_canvas.transform, "Countdown", "",
+                140, UIFactory.TextColor);
+            _countdownText.fontStyle = FontStyle.Bold;
+            UIFactory.SetAnchoredPos(_countdownText, new Vector2(0.5f, 0.5f), new Vector2(0, 60));
+            _countdownText.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// Counts 3, 2, 1 then flashes FIGHT!. Tanks are frozen by MatchManager
+        /// while this is running, so everyone starts at the same instant.
+        /// </summary>
+        void UpdateCountdown(MatchManager match)
+        {
+            if (_countdownText == null) return;
+
+            float left = match.Countdown.Value;
+            if (left <= 0f)
+            {
+                // Hold "FIGHT!" briefly after the freeze lifts, then hide.
+                if (_lastCountdownShown != 0)
+                {
+                    _lastCountdownShown = 0;
+                    _countdownText.text = "FIGHT!";
+                    _countdownText.color = UIFactory.AccentGreen;
+                    _countdownText.gameObject.SetActive(true);
+                    AudioManager.Instance?.PlayVictory();
+                    CancelInvoke(nameof(HideCountdown));
+                    Invoke(nameof(HideCountdown), 1.1f);
+                }
+                return;
+            }
+
+            int n = Mathf.CeilToInt(left - 1f);   // last second is reserved for FIGHT!
+            if (n < 1) n = 1;
+            if (n != _lastCountdownShown)
+            {
+                _lastCountdownShown = n;
+                AudioManager.Instance?.PlayCountdownTick();
+            }
+
+            _countdownText.gameObject.SetActive(true);
+            _countdownText.text = n.ToString();
+            _countdownText.color = UIFactory.TextColor;
+
+            // Pop each number as it appears.
+            float frac = 1f - ((left - 1f) - Mathf.Floor(left - 1f));
+            float scale = Mathf.Lerp(1.5f, 1f, Mathf.Clamp01(frac * 2.2f));
+            _countdownText.transform.localScale = new Vector3(scale, scale, 1f);
+        }
+
+        void HideCountdown()
+        {
+            if (_countdownText != null) _countdownText.gameObject.SetActive(false);
+        }
+
+        /// <summary>Four canned phrases you can fire off without typing.</summary>
+        void BuildQuickChat()
+        {
+            var toggle = UIFactory.CreateButton(_canvas.transform, "ChatBtn", "CHAT",
+                new Vector2(120, 60), new Color(0.2f, 0.45f, 0.7f, 0.75f),
+                () => _chatPanel.gameObject.SetActive(!_chatPanel.gameObject.activeSelf), 24);
+            toggle.GetComponent<Image>().sprite = UIFactory.RoundedSprite;
+            toggle.GetComponent<Image>().type = Image.Type.Sliced;
+            UIFactory.SetAnchoredPos(toggle, new Vector2(1f, 1f), new Vector2(-380, -30));
+
+            _chatPanel = UIFactory.CreateRoundedPanel(_canvas.transform, "QuickChat",
+                UIFactory.PanelColor, new Vector2(360, 300));
+            _chatPanel.anchorMin = _chatPanel.anchorMax = _chatPanel.pivot = new Vector2(1f, 1f);
+            _chatPanel.anchoredPosition = new Vector2(-320, -100);
+            UIFactory.AddVerticalLayout(_chatPanel, 10, new RectOffset(16, 16, 16, 16));
+
+            for (int i = 0; i < GameConstants.QuickChatPhrases.Length; i++)
+            {
+                int index = i;
+                UIFactory.CreateButton(_chatPanel, $"Phrase{i}",
+                    GameConstants.QuickChatPhrases[i], new Vector2(320, 58),
+                    UIFactory.PanelLight, () =>
+                    {
+                        if (MatchManager.Instance != null)
+                            MatchManager.Instance.QuickChatServerRpc(index);
+                        _chatPanel.gameObject.SetActive(false);
+                    }, 24);
+            }
+            _chatPanel.gameObject.SetActive(false);
+        }
+
         void BuildScoreboard()
         {
             _scoreboardPanel = UIFactory.CreateCenterPanel(_canvas.transform, "Scoreboard",
@@ -580,7 +675,8 @@ namespace TankBattle.UI
             {
                 var entry = match.GetLocalEntry();
                 _xpText.color = UIFactory.TextDim;
-                _xpText.text = $"your round:  {entry.Kills} kills  ·  {entry.Deaths} deaths";
+                _xpText.text = $"your round:  {entry.Kills} kills  ·  {entry.Deaths} deaths\n"
+                             + BuildAwards(match);
             }
 
             // Only the host can drag everyone back to the lobby.
@@ -592,6 +688,43 @@ namespace TankBattle.UI
             _scoreboardPanel.gameObject.SetActive(false);
             _winPanel.gameObject.SetActive(true);
             AudioManager.Instance?.PlayVictory();
+        }
+
+        /// <summary>
+        /// Fun end-of-match awards pulled straight from the scoreboard: top
+        /// killer, best kill/death ratio and whoever died least.
+        /// </summary>
+        string BuildAwards(MatchManager match)
+        {
+            if (match.Scores.Count == 0) return "";
+
+            ScoreEntry topKills = default, bestRatio = default, survivor = default;
+            bool first = true;
+            float bestRatioValue = -1f;
+
+            foreach (var e in match.Scores)
+            {
+                if (first)
+                {
+                    topKills = bestRatio = survivor = e;
+                    bestRatioValue = e.Kills / Mathf.Max(1f, e.Deaths);
+                    first = false;
+                    continue;
+                }
+                if (e.Kills > topKills.Kills) topKills = e;
+                if (e.Deaths < survivor.Deaths) survivor = e;
+
+                float r = e.Kills / Mathf.Max(1f, e.Deaths);
+                if (r > bestRatioValue) { bestRatioValue = r; bestRatio = e; }
+            }
+
+            var sb = new System.Text.StringBuilder();
+            if (topKills.Kills > 0)
+                sb.Append($"TOP GUN  {topKills.Name} ({topKills.Kills})     ");
+            if (bestRatioValue > 0f)
+                sb.Append($"BEST RATIO  {bestRatio.Name}     ");
+            sb.Append($"HARDEST TO KILL  {survivor.Name} ({survivor.Deaths} deaths)");
+            return sb.ToString();
         }
 
         string BuildScoreboardString()
