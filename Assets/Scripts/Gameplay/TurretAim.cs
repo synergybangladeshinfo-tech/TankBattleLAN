@@ -19,7 +19,7 @@ namespace TankBattle.Gameplay
         public NetworkVariable<float> TurretYaw = new NetworkVariable<float>(
             0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
-        [SerializeField] float range = 45f;       // lock-on range (metres)
+        [SerializeField] float range = 60f;       // lock-on range (metres, v2.7 bigger map)
         [SerializeField] float turnSpeed = 220f;  // turret slew (deg/s)
 
         Transform _pivot;

@@ -23,7 +23,7 @@ namespace TankBattle.Gameplay
 
         const float MoveSpeed = 6.0f;   // slightly slower than players
         const float TurnSpeed = 110f;
-        const float FireRange = 30f;
+        const float FireRange = 42f;   // v2.7: bigger arena, bots need longer reach
         const float Gravity = 25f;
 
         CharacterController _cc;

@@ -22,7 +22,7 @@ namespace TankBattle.Gameplay
         public Transform muzzle;                     // bullet spawn point (barrel tip)
 
         [Header("Aim assist")]
-        [SerializeField] float assistRange = 35f;    // metres
+        [SerializeField] float assistRange = 48f;    // metres (v2.7: bigger arena)
         [SerializeField] float assistCone = 10f;     // degrees off-axis we still help
 
         /// <summary>Current weapon (index into Weapons.Defs) and shots left (-1 = infinite).</summary>

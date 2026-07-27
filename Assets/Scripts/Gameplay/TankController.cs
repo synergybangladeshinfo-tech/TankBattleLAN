@@ -45,6 +45,8 @@ namespace TankBattle.Gameplay
         float _dashUntil, _dashReadyAt;   // boost/dash timing
         bool _rammedThisDash;             // one ram hit per dash
 
+        GameObject _importedHull;   // spawned model when an imported style is picked
+
         float _hoverFuel = GameConstants.HoverFuelMax;  // seconds of lift left
         float _groundY;                                 // height we last stood at
         bool _hovering;
@@ -247,14 +249,42 @@ namespace TankBattle.Gameplay
 #endif
         }
 
-        /// <summary>Enable only the hull matching the chosen body style.</summary>
+        /// <summary>
+        /// Enable only the hull matching the chosen body style.
+        ///
+        /// Styles 0..2 are the built-in procedural hulls. Anything above that is
+        /// an imported model from Assets/Resources/TankModels (see
+        /// TankModelLibrary) - the model replaces the hull mesh while the game's
+        /// own turret pivot stays on top, so aiming, firing and the muzzle
+        /// position keep working no matter what model you drop in.
+        /// </summary>
         void ApplyStyle(int style)
         {
-            for (int i = 0; i < GameConstants.TankStyleNames.Length; i++)
+            int builtIn = GameConstants.TankStyleNames.Length;
+            bool imported = style >= builtIn && TankModelLibrary.HasModels;
+
+            for (int i = 0; i < builtIn; i++)
             {
                 var hull = transform.Find($"Hull_{i}");
-                if (hull != null) hull.gameObject.SetActive(i == style);
+                if (hull != null) hull.gameObject.SetActive(!imported && i == style);
             }
+
+            // Clear any previously spawned model.
+            if (_importedHull != null)
+            {
+                Destroy(_importedHull);
+                _importedHull = null;
+            }
+            if (!imported) return;
+
+            int modelIndex = style - builtIn;
+            _importedHull = TankModelLibrary.Spawn(modelIndex, transform, out Transform modelTurret);
+
+            // The model may ship its own turret; hide it so there are not two.
+            if (modelTurret != null) modelTurret.gameObject.SetActive(false);
+
+            // Imported hulls sit under the game's turret, never over it.
+            if (_importedHull != null) _importedHull.transform.SetAsFirstSibling();
         }
 
         /// <summary>Set the camo pattern texture on the tinted hull/turret panels.</summary>
@@ -284,10 +314,17 @@ namespace TankBattle.Gameplay
             foreach (var r in GetComponentsInChildren<MeshRenderer>(true))
             {
                 if (r.GetComponentInParent<Billboard>() != null) continue; // bar / name tag
+                if (_importedHull != null && r.transform.IsChildOf(_importedHull.transform))
+                    continue;                                              // handled below
                 var shared = r.sharedMaterial;
                 if (shared == null || !shared.name.StartsWith("Tank_Base")) continue;
                 r.material.color = c;
             }
+
+            // Imported models use their own materials, so tint them separately -
+            // otherwise every player's downloaded tank would look identical.
+            if (_importedHull != null) TankModelLibrary.Tint(_importedHull, c);
+
             if (_nameTag != null) _nameTag.color = Color.Lerp(c, Color.white, 0.35f);
         }
 
