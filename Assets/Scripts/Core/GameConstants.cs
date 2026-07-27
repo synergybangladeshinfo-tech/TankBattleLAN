@@ -68,10 +68,10 @@ namespace TankBattle.Core
         /// <summary>Human friendly names shown in the UI, index-aligned with MapScenes.</summary>
         public static readonly string[] MapDisplayNames =
         {
-            "Open Arena",
-            "Crossfire",
-            "The Maze",
-            "Pillar Field",
+            "Desert Ruins",
+            "City Block",
+            "Deep Forest",
+            "Space Deck",
             "Fortress"
         };
 
