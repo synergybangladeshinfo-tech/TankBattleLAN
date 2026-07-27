@@ -845,22 +845,6 @@ namespace TankBattle.UI
             }
             return sb.ToString();
         }
-    }
-
-    /// <summary>
-    /// Forwards pointer events from the big invisible lower-left touch pad to
-    /// the floating joystick, so pressing anywhere in that region grabs it.
-    /// </summary>
-    public class JoystickPadForwarder : MonoBehaviour,
-        UnityEngine.EventSystems.IPointerDownHandler,
-        UnityEngine.EventSystems.IDragHandler,
-        UnityEngine.EventSystems.IPointerUpHandler
-    {
-        public VirtualJoystick Target;
-
-        public void OnPointerDown(UnityEngine.EventSystems.PointerEventData e) => Target?.OnPointerDown(e);
-        public void OnDrag(UnityEngine.EventSystems.PointerEventData e) => Target?.OnDrag(e);
-        public void OnPointerUp(UnityEngine.EventSystems.PointerEventData e) => Target?.OnPointerUp(e);
         // ------------------------------------------------------------ FPS meter
 
         Text _fpsText;
@@ -887,6 +871,22 @@ namespace TankBattle.UI
             _fpsAccum = 0f;
             _fpsFrames = 0;
         }
+    }
+
+    /// <summary>
+    /// Forwards pointer events from the big invisible lower-left touch pad to
+    /// the floating joystick, so pressing anywhere in that region grabs it.
+    /// </summary>
+    public class JoystickPadForwarder : MonoBehaviour,
+        UnityEngine.EventSystems.IPointerDownHandler,
+        UnityEngine.EventSystems.IDragHandler,
+        UnityEngine.EventSystems.IPointerUpHandler
+    {
+        public VirtualJoystick Target;
+
+        public void OnPointerDown(UnityEngine.EventSystems.PointerEventData e) => Target?.OnPointerDown(e);
+        public void OnDrag(UnityEngine.EventSystems.PointerEventData e) => Target?.OnDrag(e);
+        public void OnPointerUp(UnityEngine.EventSystems.PointerEventData e) => Target?.OnPointerUp(e);
 
     }
 }
