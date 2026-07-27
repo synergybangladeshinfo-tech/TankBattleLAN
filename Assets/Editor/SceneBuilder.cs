@@ -174,8 +174,10 @@ namespace TankBattle.EditorTools
         }
 
         static Material _ground, _wall, _obstacle; // per-map, set in BuildMap
-        const float ArenaHalf = 40f;   // 80 x 80 playfield for 16 players
-        const float LayoutScale = 1.3f; // obstacle layouts were authored for 60x60
+        // v2.7: the arena is now 140 x 140 - about THREE TIMES the old playable
+        // area, so 16 tanks have somewhere to go and the cover actually matters.
+        const float ArenaHalf = 70f;    // 140 x 140 playfield
+        const float LayoutScale = 2.28f; // obstacle layouts were authored for 60x60
 
         static void BuildMap(MapDef d)
         {
@@ -197,8 +199,8 @@ namespace TankBattle.EditorTools
             camGo.tag = "MainCamera";
             var cam = camGo.GetComponent<Camera>();
             cam.clearFlags = CameraClearFlags.Skybox;
-            cam.farClipPlane = 220f;
-            camGo.transform.position = new Vector3(0f, 35f, -45f);
+            cam.farClipPlane = 400f;
+            camGo.transform.position = new Vector3(0f, 55f, -78f);
             camGo.transform.rotation = Quaternion.Euler(40f, 0f, 0f);
 
             // Procedural gradient skybox - far nicer than a flat color, and the
@@ -236,10 +238,10 @@ namespace TankBattle.EditorTools
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.Linear;
             RenderSettings.fogColor = Color.Lerp(d.Sky, Color.white, 0.15f);
-            RenderSettings.fogStartDistance = 55f;
-            RenderSettings.fogEndDistance = 160f;
+            RenderSettings.fogStartDistance = 95f;
+            RenderSettings.fogEndDistance = 290f;
 
-            // Ground (80 x 80) + perimeter walls.
+            // Ground (140 x 140) + perimeter walls.
             var geometry = new GameObject("Geometry");
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";
@@ -268,23 +270,39 @@ namespace TankBattle.EditorTools
             BuildFoliage(d);
             BuildPlatforms(d);   // raised platforms + ramps (Mini-Militia vertical feel)
 
-            // Eight spawn points on a ring, all facing the centre.
+            // Spawn points on two rings (14 total) so 16 players never pile up
+            // on top of each other in the much larger arena.
+            int spawnIndex = 0;
             for (int i = 0; i < 8; i++)
             {
                 float ang = i * 45f * Mathf.Deg2Rad;
-                Vector3 pos = new Vector3(Mathf.Sin(ang), 0f, Mathf.Cos(ang)) * 33f;
+                Vector3 pos = new Vector3(Mathf.Sin(ang), 0f, Mathf.Cos(ang)) * 60f;
                 pos.y = 0.1f;
-                var sp = new GameObject($"Spawn_{i}", typeof(SpawnPoint));
+                var sp = new GameObject($"Spawn_{spawnIndex++:00}", typeof(SpawnPoint));
+                sp.transform.position = pos;
+                sp.transform.rotation = Quaternion.LookRotation(-pos.normalized);
+            }
+            for (int i = 0; i < 6; i++)
+            {
+                float ang = (i * 60f + 30f) * Mathf.Deg2Rad;
+                Vector3 pos = new Vector3(Mathf.Sin(ang), 0f, Mathf.Cos(ang)) * 34f;
+                pos.y = 0.1f;
+                var sp = new GameObject($"Spawn_{spawnIndex++:00}", typeof(SpawnPoint));
                 sp.transform.position = pos;
                 sp.transform.rotation = Quaternion.LookRotation(-pos.normalized);
             }
 
-            // Six weapon-crate points (centre cross + two diagonals).
+            // Fourteen weapon-crate points spread over the whole arena - with 3x
+            // the ground to cover, six crates left most of the map empty.
             Vector3[] pickupSpots =
             {
-                new Vector3(14f, 0f, 0f), new Vector3(-14f, 0f, 0f),
-                new Vector3(0f, 0f, 14f), new Vector3(0f, 0f, -14f),
-                new Vector3(24f, 0f, 24f), new Vector3(-24f, 0f, -24f)
+                new Vector3( 20f, 0f,   0f), new Vector3(-20f, 0f,   0f),
+                new Vector3(  0f, 0f,  20f), new Vector3(  0f, 0f, -20f),
+                new Vector3( 38f, 0f,  38f), new Vector3(-38f, 0f, -38f),
+                new Vector3( 38f, 0f, -38f), new Vector3(-38f, 0f,  38f),
+                new Vector3( 56f, 0f,   0f), new Vector3(-56f, 0f,   0f),
+                new Vector3(  0f, 0f,  56f), new Vector3(  0f, 0f, -56f),
+                new Vector3( 28f, 0f, -12f), new Vector3(-28f, 0f,  12f)
             };
             for (int i = 0; i < pickupSpots.Length; i++)
             {
@@ -377,10 +395,10 @@ namespace TankBattle.EditorTools
                 TextureBuilder.StoneTileN);
 
             // Ring of rocks (deterministic pseudo-random sizes/offsets).
-            for (int i = 0; i < 12; i++)
+            for (int i = 0; i < 22; i++)
             {
-                float ang = (i * 30f + 11f) * Mathf.Deg2Rad;
-                float radius = 37.2f + ((i * 7) % 3) * 0.8f;
+                float ang = (i * 16.4f + 11f) * Mathf.Deg2Rad;
+                float radius = 66.5f + ((i * 7) % 3) * 0.9f;
                 Vector3 pos = new Vector3(Mathf.Sin(ang) * radius, 0f, Mathf.Cos(ang) * radius);
                 float s = 1.6f + ((i * 13) % 5) * 0.5f;
 
@@ -452,10 +470,13 @@ namespace TankBattle.EditorTools
         {
             Vector3[] spots =
             {
-                new Vector3(20f, 0f, 8f),  new Vector3(-20f, 0f, 8f),
-                new Vector3(20f, 0f, -8f), new Vector3(-20f, 0f, -8f),
-                new Vector3(8f, 0f, 20f),  new Vector3(-8f, 0f, 20f),
-                new Vector3(8f, 0f, -20f), new Vector3(-8f, 0f, -20f)
+                new Vector3( 34f, 0f,  14f), new Vector3(-34f, 0f,  14f),
+                new Vector3( 34f, 0f, -14f), new Vector3(-34f, 0f, -14f),
+                new Vector3( 14f, 0f,  34f), new Vector3(-14f, 0f,  34f),
+                new Vector3( 14f, 0f, -34f), new Vector3(-14f, 0f, -34f),
+                new Vector3( 56f, 0f,  22f), new Vector3(-56f, 0f,  22f),
+                new Vector3( 22f, 0f,  56f), new Vector3(-22f, 0f, -56f),
+                new Vector3( 46f, 0f, -46f), new Vector3(-46f, 0f,  46f)
             };
 
             var barrelMat = PrefabBuilder.CreateTexturedMaterial("Prop_Barrel",
@@ -563,31 +584,33 @@ namespace TankBattle.EditorTools
                 new Color(0.35f, 0.75f, 0.35f), TextureBuilder.Leaf, 2f);
 
             // Greener maps get denser grass; deserts get sparse tufts.
-            int grassCount = d.Theme == MapTheme.Forest ? 130
-                           : d.Theme == MapTheme.Fort || d.Theme == MapTheme.Urban ? 55 : 70;
+            int grassCount = d.Theme == MapTheme.Forest ? 380
+                           : d.Theme == MapTheme.Fort || d.Theme == MapTheme.Urban ? 160 : 210;
             for (int i = 0; i < grassCount; i++)
             {
-                Vector3 p = new Vector3(Random.Range(-35f, 35f), 0f, Random.Range(-35f, 35f));
+                Vector3 p = new Vector3(Random.Range(-64f, 64f), 0f, Random.Range(-64f, 64f));
                 if (p.magnitude < 6f) continue; // keep the very centre clear
                 GrassTuft(p, grassMat, Random.Range(0.7f, 1.5f));
             }
 
             // Bushes big enough to hide a tank inside (no collider = drive in).
-            int bushCount = d.Theme == MapTheme.Forest ? 20 : 12;
+            int bushCount = d.Theme == MapTheme.Forest ? 58 : 34;
             for (int i = 0; i < bushCount; i++)
             {
                 float ang = Random.value * Mathf.PI * 2f;
-                float rad = Random.Range(10f, 30f);
+                float rad = Random.Range(10f, 62f);
                 Vector3 p = new Vector3(Mathf.Cos(ang) * rad, 0f, Mathf.Sin(ang) * rad);
                 Bush(p, bushMat, Random.Range(2.2f, 3.4f));
             }
 
             // Three roofed hideouts (real cover you can shelter under).
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < 7; i++)
             {
-                float ang = (i * 120f + 30f) * Mathf.Deg2Rad;
-                Vector3 p = new Vector3(Mathf.Cos(ang) * 22f, 0f, Mathf.Sin(ang) * 22f);
-                Hideout(p, i * 120f + 30f);
+                float deg = i * 51.4f + 30f;
+                float ang = deg * Mathf.Deg2Rad;
+                float rad = 24f + (i % 3) * 17f;   // inner + outer rings of nooks
+                Vector3 p = new Vector3(Mathf.Cos(ang) * rad, 0f, Mathf.Sin(ang) * rad);
+                Hideout(p, deg);
             }
 
             Random.state = prev;
@@ -684,9 +707,13 @@ namespace TankBattle.EditorTools
             var platMat = _wall;
             Vector3[] spots =
             {
-                new Vector3(17f, 0f, 17f),
-                new Vector3(-17f, 0f, -17f),
-                new Vector3(-17f, 0f, 17f)
+                new Vector3( 30f, 0f,  30f),
+                new Vector3(-30f, 0f, -30f),
+                new Vector3(-30f, 0f,  30f),
+                new Vector3( 30f, 0f, -30f),
+                new Vector3(  0f, 0f,  48f),
+                new Vector3(  0f, 0f, -48f),
+                new Vector3( 50f, 0f,   0f)
             };
 
             foreach (var spot in spots)
@@ -711,9 +738,9 @@ namespace TankBattle.EditorTools
             // Scattered low cover blocks around the middle.
             var prev = Random.state;
             Random.InitState(d.SceneName.GetHashCode() + 99);
-            for (int i = 0; i < 8; i++)
+            for (int i = 0; i < 26; i++)
             {
-                Vector3 p = new Vector3(Random.Range(-22f, 22f), 0.6f, Random.Range(-22f, 22f));
+                Vector3 p = new Vector3(Random.Range(-58f, 58f), 0.6f, Random.Range(-58f, 58f));
                 if (p.magnitude < 8f) continue;
                 var b = Box(d, "Cover", p, new Vector3(Random.Range(2f, 3.5f), 1.2f, Random.Range(1f, 1.6f)), _obstacle);
                 b.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 180f), 0f);
