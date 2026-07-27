@@ -36,7 +36,24 @@ namespace TankBattle.Utils
         public void SetTarget(Transform target)
         {
             _target = target;
+            _watchUntil = 0f;          // a fresh target cancels any death cam
+            _watchTarget = null;
             if (_target != null) SnapToTarget();
+        }
+
+        Transform _watchTarget;    // whoever killed you
+        float _watchUntil;
+
+        /// <summary>
+        /// Point the camera at the tank that just killed you for a moment, then
+        /// hand control back to your own tank. A cheap "so THAT is where it came
+        /// from" moment without the cost of recording a full replay.
+        /// </summary>
+        public void WatchKiller(Transform killer, float seconds)
+        {
+            if (killer == null) return;
+            _watchTarget = killer;
+            _watchUntil = Time.time + seconds;
         }
 
         /// <summary>Add a burst of camera shake (e.g. own weapon fire).</summary>
@@ -58,7 +75,13 @@ namespace TankBattle.Utils
 
         void LateUpdate()
         {
-            if (_target == null) return;
+            // Death cam takes over briefly, then expires on its own.
+            Transform focus = _target;
+            if (_watchTarget != null && Time.time < _watchUntil) focus = _watchTarget;
+            else if (_watchTarget != null) _watchTarget = null;
+
+            if (focus == null) return;
+            _activeFocus = focus;
 
             // Smooth zoom so switching to the sniper glides instead of snapping.
             _zoom = Mathf.Lerp(_zoom, _zoomTarget, 1f - Mathf.Exp(-7f * Time.deltaTime));
@@ -78,11 +101,17 @@ namespace TankBattle.Utils
             else _shakeOffset = Vector3.zero;
 
             transform.position = basePos + _shakeOffset;
-            transform.LookAt(_target.position + Vector3.up * lookHeight);
+            transform.LookAt(focus.position + Vector3.up * lookHeight);
         }
 
-        Vector3 DesiredPosition() =>
-            _target.position - _target.forward * (distance * _zoom)
-                             + Vector3.up * (height * Mathf.Lerp(1f, 1.35f, _zoom - 1f));
+        Transform _activeFocus;
+
+        Vector3 DesiredPosition()
+        {
+            var t = _activeFocus != null ? _activeFocus : _target;
+            if (t == null) return transform.position;
+            return t.position - t.forward * (distance * _zoom)
+                              + Vector3.up * (height * Mathf.Lerp(1f, 1.35f, _zoom - 1f));
+        }
     }
 }
