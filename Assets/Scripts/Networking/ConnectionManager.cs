@@ -130,6 +130,25 @@ namespace TankBattle.Networking
 
         // ---------------------------------------------------------------- client
 
+        /// <summary>
+        /// Start a client using whatever connection data the transport already
+        /// holds. OnlineManager uses this after pointing the transport at Relay -
+        /// calling the address/port overload there would wipe the Relay setup.
+        /// </summary>
+        public bool StartClientRaw()
+        {
+            _nm.NetworkConfig.ConnectionApproval = true;
+            _nm.NetworkConfig.ConnectionData = LocalPayload();
+            GameSession.IsHost = false;
+
+            if (!_nm.StartClient())
+            {
+                Debug.LogError("[ConnectionManager] StartClient (relay) failed.");
+                return false;
+            }
+            return true;
+        }
+
         /// <summary>Connect to a discovered host.</summary>
         public bool StartClient(string address, ushort port)
         {
@@ -228,6 +247,7 @@ namespace TankBattle.Networking
         /// </summary>
         public void Leave(string notice = null)
         {
+            OnlineManager.Reset();          // forget any Relay room we were in
             GameSession.MenuNotice = notice;
             GameSession.IsHost = false;
             GameSession.SoloMode = false;
