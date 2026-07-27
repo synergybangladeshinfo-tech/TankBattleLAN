@@ -21,6 +21,14 @@ namespace TankBattle.Utils
         Transform _target;
         float _shake;          // current shake magnitude (decays)
         Vector3 _shakeOffset;
+        float _zoom = 1f;         // 1 = normal, >1 = pulled back (sniper)
+        float _zoomTarget = 1f;
+
+        /// <summary>
+        /// Pull the camera back (or return it). 1 = default chase distance,
+        /// ~1.65 while sniping so the long shots are actually aimable.
+        /// </summary>
+        public void SetZoom(float multiplier) => _zoomTarget = Mathf.Clamp(multiplier, 0.7f, 2.5f);
 
         void Awake() => Instance = this;
         void OnDestroy() { if (Instance == this) Instance = null; }
@@ -52,6 +60,9 @@ namespace TankBattle.Utils
         {
             if (_target == null) return;
 
+            // Smooth zoom so switching to the sniper glides instead of snapping.
+            _zoom = Mathf.Lerp(_zoom, _zoomTarget, 1f - Mathf.Exp(-7f * Time.deltaTime));
+
             float t = 1f - Mathf.Exp(-positionLerp * Time.deltaTime); // fps-independent
             Vector3 basePos = Vector3.Lerp(transform.position - _shakeOffset, DesiredPosition(), t);
 
@@ -71,6 +82,7 @@ namespace TankBattle.Utils
         }
 
         Vector3 DesiredPosition() =>
-            _target.position - _target.forward * distance + Vector3.up * height;
+            _target.position - _target.forward * (distance * _zoom)
+                             + Vector3.up * (height * Mathf.Lerp(1f, 1.35f, _zoom - 1f));
     }
 }
