@@ -100,7 +100,9 @@ namespace TankBattle.UI
             BuildStatusBar();
 
             // Minimap (top-right) with the kill feed stacked underneath it.
-            Minimap.Build(_canvas.transform, 250f);
+            // Players can switch the minimap off in Settings.
+            var minimap = Minimap.Build(_canvas.transform, 250f);
+            if (minimap != null) minimap.gameObject.SetActive(SettingsManager.ShowMinimap);
             Feed = KillFeed.Build(_canvas.transform, 380f);
 
             BuildScoreboard();
@@ -111,12 +113,15 @@ namespace TankBattle.UI
             BuildQuickChat();
             BuildReloadIndicator();
             BuildFirstTimeHints();
+            BuildFpsCounter();
 
             AudioManager.Instance?.PlayBattleMusic();
         }
 
         void Update()
         {
+            UpdateFps();
+
             var match = MatchManager.Instance;
             if (match == null || !match.IsSpawned) return;
 
@@ -856,5 +861,32 @@ namespace TankBattle.UI
         public void OnPointerDown(UnityEngine.EventSystems.PointerEventData e) => Target?.OnPointerDown(e);
         public void OnDrag(UnityEngine.EventSystems.PointerEventData e) => Target?.OnDrag(e);
         public void OnPointerUp(UnityEngine.EventSystems.PointerEventData e) => Target?.OnPointerUp(e);
+        // ------------------------------------------------------------ FPS meter
+
+        Text _fpsText;
+        float _fpsAccum;
+        int _fpsFrames;
+
+        /// <summary>Small frame-rate readout, off unless enabled in Settings.</summary>
+        void BuildFpsCounter()
+        {
+            if (!SettingsManager.ShowFps) return;
+            _fpsText = UIFactory.CreateText(_canvas.transform, "Fps", "-- FPS", 24,
+                new Color(0.65f, 0.95f, 0.65f, 0.9f), TextAnchor.UpperLeft);
+            UIFactory.SetAnchoredPos(_fpsText, new Vector2(0f, 1f), new Vector2(120, -14));
+            ((RectTransform)_fpsText.transform).sizeDelta = new Vector2(180, 32);
+        }
+
+        void UpdateFps()
+        {
+            if (_fpsText == null) return;
+            _fpsAccum += Time.unscaledDeltaTime;
+            _fpsFrames++;
+            if (_fpsAccum < 0.4f) return;
+            _fpsText.text = $"{Mathf.RoundToInt(_fpsFrames / _fpsAccum)} FPS";
+            _fpsAccum = 0f;
+            _fpsFrames = 0;
+        }
+
     }
 }

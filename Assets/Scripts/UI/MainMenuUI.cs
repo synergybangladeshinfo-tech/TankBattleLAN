@@ -23,6 +23,9 @@ namespace TankBattle.UI
     {
         Canvas _canvas;
         RectTransform _homePanel, _garagePanel, _hostPanel, _joinPanel, _lobbyPanel, _settingsPanel;
+        RectTransform _onlinePanel;
+        InputField _roomCodeField, _projectIdField;
+        Text _onlineStatus, _lobbyCodeText;
         InputField _nameField;
         Text _noticeText, _joinStatusText, _lobbyPlayersText, _lobbyStatusText;
         Text _modeHintText, _garagePreview;
@@ -30,6 +33,8 @@ namespace TankBattle.UI
         Button _startMatchButton;
         Text _hostTitle, _startHostLabel;
         bool _soloIntent;
+        /// <summary>True when the next hosted match should run over the internet.</summary>
+        bool _onlineIntent;
         int _selectedMap, _selectedMode, _selectedTime;
         readonly List<Button> _mapButtons = new List<Button>();
         readonly List<Button> _modeButtons = new List<Button>();
@@ -67,6 +72,7 @@ namespace TankBattle.UI
             BuildHostPanel();
             BuildJoinPanel();
             BuildLobbyPanel();
+            BuildOnlinePanel();
             _settingsPanel = SettingsPanel.Build(_canvas.transform, () => Show(_homePanel));
 
             _selectedMap = GameSession.SelectedMapIndex;
@@ -146,41 +152,78 @@ namespace TankBattle.UI
             RefreshPreviewTank();
 
             // Warm glow behind the title so the top of the screen has some life.
+            // v3.1 FIX: this used CircleSprite, which has a hard 1px edge - at
+            // 1500x620 that drew a visible orange ellipse straight across the
+            // title text ("lekhar upore chokor"). SoftGlowSprite fades to zero
+            // alpha at its rim, so there is no ring at any size.
             var glow = UIFactory.CreatePanel(_canvas.transform, "TitleGlow",
-                new Color(1f, 0.55f, 0.15f, 0.13f),
+                new Color(1f, 0.55f, 0.15f, 0.10f),
                 new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero, Vector2.zero);
-            glow.sizeDelta = new Vector2(1500, 620);
+            glow.sizeDelta = new Vector2(1800, 760);
             glow.pivot = new Vector2(0.5f, 1f);
-            glow.anchoredPosition = new Vector2(0, 60);
+            glow.anchoredPosition = new Vector2(0, 150);
             var glowImg = glow.GetComponent<Image>();
-            glowImg.sprite = UIFactory.CircleSprite;
+            glowImg.sprite = UIFactory.SoftGlowSprite;
             glowImg.raycastTarget = false;
 
-            // --- title block: accent bar + wordmark + rule ---
-            var title = UIFactory.CreateText(_canvas.transform, "Title", "TANK BATTLE",
-                104, UIFactory.TextColor);
+            // --- logo lockup: emblem badge + wordmark, centred as one unit ---
+            var logoRow = new GameObject("LogoRow", typeof(RectTransform));
+            logoRow.transform.SetParent(_canvas.transform, false);
+            var logoRt = (RectTransform)logoRow.transform;
+            logoRt.anchorMin = logoRt.anchorMax = new Vector2(0.5f, 1f);
+            logoRt.pivot = new Vector2(0.5f, 1f);
+            logoRt.sizeDelta = new Vector2(1000, 172);
+            logoRt.anchoredPosition = new Vector2(0, -26);
+            var logoLayout = logoRow.AddComponent<HorizontalLayoutGroup>();
+            logoLayout.spacing = 28;
+            logoLayout.childAlignment = TextAnchor.MiddleCenter;
+            logoLayout.childControlWidth = false; logoLayout.childControlHeight = false;
+            logoLayout.childForceExpandWidth = false; logoLayout.childForceExpandHeight = false;
+
+            var badgeGo = new GameObject("Emblem", typeof(Image));
+            badgeGo.transform.SetParent(logoRt, false);
+            var badgeImg = badgeGo.GetComponent<Image>();
+            badgeImg.sprite = UIFactory.EmblemSprite;
+            badgeImg.preserveAspect = true;
+            badgeImg.raycastTarget = false;
+            ((RectTransform)badgeGo.transform).sizeDelta = new Vector2(148, 148);
+
+            var word = new GameObject("Wordmark", typeof(RectTransform));
+            word.transform.SetParent(logoRt, false);
+            var wordRt = (RectTransform)word.transform;
+            wordRt.sizeDelta = new Vector2(700, 150);
+
+            var title = UIFactory.CreateText(wordRt, "Title", "TANK BATTLE",
+                92, UIFactory.TextColor, TextAnchor.MiddleLeft);
             title.fontStyle = FontStyle.Bold;
-            UIFactory.SetAnchoredPos(title, new Vector2(0.5f, 1f), new Vector2(0, -96));
+            var titleRt = (RectTransform)title.transform;
+            titleRt.anchorMin = titleRt.anchorMax = titleRt.pivot = new Vector2(0f, 0.5f);
+            titleRt.sizeDelta = new Vector2(700, 96);
+            titleRt.anchoredPosition = new Vector2(0, 26);
 
-            var lan = UIFactory.CreateText(_canvas.transform, "TitleLan", "L A N",
-                40, new Color(1f, 0.62f, 0.18f, 1f));
-            lan.fontStyle = FontStyle.Bold;
-            UIFactory.SetAnchoredPos(lan, new Vector2(0.5f, 1f), new Vector2(0, -160));
-
-            // Thin rule under the wordmark, brightest in the middle.
-            var rule = UIFactory.CreatePanel(_canvas.transform, "TitleRule",
-                new Color(1f, 0.62f, 0.18f, 0.55f),
-                new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero, Vector2.zero);
-            rule.sizeDelta = new Vector2(640, 3);
-            rule.pivot = new Vector2(0.5f, 1f);
-            rule.anchoredPosition = new Vector2(0, -186);
+            // Thin accent rule between the wordmark and the strapline.
+            var rule = UIFactory.CreatePanel(wordRt, "TitleRule",
+                new Color(1f, 0.62f, 0.18f, 0.6f),
+                new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), Vector2.zero, Vector2.zero);
+            rule.pivot = new Vector2(0f, 0.5f);
+            rule.sizeDelta = new Vector2(655, 3);
+            rule.anchoredPosition = new Vector2(4, -22);
             rule.GetComponent<Image>().raycastTarget = false;
 
-            var sub = UIFactory.CreateText(_canvas.transform, "Subtitle",
-                "OFFLINE  ·  WI-FI / HOTSPOT  ·  16 PLAYERS  ·  5 MODES", 26, UIFactory.TextDim);
-            UIFactory.SetAnchoredPos(sub, new Vector2(0.5f, 1f), new Vector2(0, -212));
+            var lan = UIFactory.CreateText(wordRt, "TitleLan",
+                "L A N   ·   O N L I N E   ·   1 6   P L A Y E R S",
+                27, new Color(1f, 0.62f, 0.18f, 1f), TextAnchor.MiddleLeft);
+            lan.fontStyle = FontStyle.Bold;
+            var lanRt = (RectTransform)lan.transform;
+            lanRt.anchorMin = lanRt.anchorMax = lanRt.pivot = new Vector2(0f, 0.5f);
+            lanRt.sizeDelta = new Vector2(700, 34);
+            lanRt.anchoredPosition = new Vector2(6, -48);
 
-            var ver = UIFactory.CreateText(_canvas.transform, "Version", "v2.9", 22,
+            var sub = UIFactory.CreateText(_canvas.transform, "Subtitle",
+                "5 MAPS  ·  5 MODES  ·  WI-FI, HOTSPOT OR INTERNET", 25, UIFactory.TextDim);
+            UIFactory.SetAnchoredPos(sub, new Vector2(0.5f, 1f), new Vector2(0, -214));
+
+            var ver = UIFactory.CreateText(_canvas.transform, "Version", "v3.1", 22,
                 new Color(0.45f, 0.50f, 0.58f, 1f));
             UIFactory.SetAnchoredPos(ver, new Vector2(1f, 0f), new Vector2(-30, 26));
 
@@ -233,16 +276,23 @@ namespace TankBattle.UI
             var left = MenuColumn("PlayColumn", new Vector2(-320, -150));
             UIFactory.CreateMenuButton(left, "Solo", "PLAY SOLO",
                 "practise against 5 AI tanks",
-                new Color(0.62f, 0.38f, 1f, 1f), () => OpenMatchSetup(solo: true));
+                new Color(0.62f, 0.38f, 1f, 1f), () => OpenMatchSetup(solo: true, online: false));
             UIFactory.CreateMenuButton(left, "Host", "HOST GAME",
                 "start a match others can join",
-                UIFactory.Accent, () => OpenMatchSetup(solo: false));
+                UIFactory.Accent, () => OpenMatchSetup(solo: false, online: false));
             UIFactory.CreateMenuButton(left, "Join", "JOIN GAME",
                 "find hosts on your Wi-Fi / hotspot",
                 UIFactory.AccentGreen, () =>
                 {
                     Show(_joinPanel);
                     LanDiscovery.Instance?.StartSearch();
+                });
+            UIFactory.CreateMenuButton(left, "Online", "PLAY ONLINE",
+                "play with friends anywhere - no Wi-Fi needed",
+                new Color(0.20f, 0.72f, 1f, 1f), () =>
+                {
+                    Show(_onlinePanel);
+                    RefreshOnlineStatus("Ready when you are.");
                 });
 
             // ---- right column: customise + system ----
@@ -297,24 +347,79 @@ namespace TankBattle.UI
 
         void BuildGaragePanel()
         {
+            // v3.1 REBUILD: the options used to live in one tall vertical layout
+            // whose content was taller than the column, so the last widget -
+            // SAVE & BACK - was pushed past the panel edge and looked swallowed.
+            // Now the screen has three fixed regions: header, body, action bar.
+            // The action bar is anchored to the panel's bottom, so it can never
+            // be pushed anywhere by the content above it.
             _garagePanel = UIFactory.CreateCenterPanel(_canvas.transform, "GaragePanel",
-                UIFactory.PanelColor, new Vector2(1620, 1000));
+                UIFactory.PanelColor, new Vector2(1660, 960));
+            _garagePanel.GetComponent<Image>().sprite = UIFactory.RoundedSprite;
+            _garagePanel.GetComponent<Image>().type = Image.Type.Sliced;
 
-            var title = UIFactory.CreateText(_garagePanel, "Title", "MY TANK",
-                44, UIFactory.TextColor);
-            UIFactory.SetAnchoredPos(title, new Vector2(0.5f, 1f), new Vector2(0, -45));
+            // ---- header ----
+            var header = UIFactory.CreatePanel(_garagePanel, "Header",
+                new Color(1f, 0.66f, 0.20f, 0.10f),
+                new Vector2(0f, 1f), new Vector2(1f, 1f), Vector2.zero, Vector2.zero);
+            header.pivot = new Vector2(0.5f, 1f);
+            header.sizeDelta = new Vector2(0, 96);
+            header.anchoredPosition = Vector2.zero;
+            header.GetComponent<Image>().raycastTarget = false;
 
-            // ---- left column: name + color + style ----
-            var left = MakeColumn(_garagePanel, "LeftCol", new Vector2(-380, -30));
-            ((RectTransform)left).sizeDelta = new Vector2(880, 920);
+            var title = UIFactory.CreateText(header, "Title", "MY TANK",
+                46, UIFactory.TextColor, TextAnchor.MiddleLeft);
+            title.fontStyle = FontStyle.Bold;
+            UIFactory.SetAnchoredPos(title, new Vector2(0f, 0.5f), new Vector2(46, 0));
+            ((RectTransform)title.transform).sizeDelta = new Vector2(500, 60);
 
-            var nameLabel = UIFactory.CreateText(left, "NameLabel", "PLAYER NAME",
-                28, UIFactory.TextDim);
-            ((RectTransform)nameLabel.transform).sizeDelta = new Vector2(800, 36);
+            var headerHint = UIFactory.CreateText(header, "HeaderHint",
+                "changes are saved the moment you tap them",
+                24, UIFactory.TextDim, TextAnchor.MiddleRight);
+            UIFactory.SetAnchoredPos(headerHint, new Vector2(1f, 0.5f), new Vector2(-46, 0));
+            ((RectTransform)headerHint.transform).sizeDelta = new Vector2(700, 40);
 
-            var garageName = UIFactory.CreateInputField(left, "GarageName", "Your name...",
-                new Vector2(600, 78));
+            // ---- left column: every customisation control ----
+            var left = new GameObject("LeftCol", typeof(RectTransform));
+            left.transform.SetParent(_garagePanel, false);
+            var leftRt = (RectTransform)left.transform;
+            leftRt.anchorMin = leftRt.anchorMax = new Vector2(0f, 1f);
+            leftRt.pivot = new Vector2(0f, 1f);
+            leftRt.sizeDelta = new Vector2(860, 720);
+            leftRt.anchoredPosition = new Vector2(34, -110);
+            UIFactory.AddVerticalLayout(leftRt, 12, new RectOffset(0, 0, 0, 0));
+
+            Text SectionLabel(string n, string t)
+            {
+                var lb = UIFactory.CreateText(leftRt, n, t, 26, UIFactory.TextDim,
+                    TextAnchor.MiddleLeft);
+                ((RectTransform)lb.transform).sizeDelta = new Vector2(840, 32);
+                return lb;
+            }
+
+            RectTransform OptionRow(string n, float h)
+            {
+                var go = new GameObject(n, typeof(RectTransform));
+                go.transform.SetParent(leftRt, false);
+                var rt = (RectTransform)go.transform;
+                rt.sizeDelta = new Vector2(840, h);
+                var hg = go.AddComponent<HorizontalLayoutGroup>();
+                hg.spacing = 14;
+                hg.childAlignment = TextAnchor.MiddleLeft;
+                hg.childControlWidth = false; hg.childControlHeight = false;
+                hg.childForceExpandWidth = false; hg.childForceExpandHeight = false;
+                return rt;
+            }
+
+            SectionLabel("NameLabel", "PLAYER NAME");
+
+            var garageName = UIFactory.CreateInputField(leftRt, "GarageName", "Your name...",
+                new Vector2(840, 70));
             garageName.text = GameSession.PlayerName;
+            var gnImg = garageName.GetComponent<Image>();
+            gnImg.sprite = UIFactory.RoundedSprite;
+            gnImg.type = Image.Type.Sliced;
+            gnImg.color = new Color(0.06f, 0.08f, 0.12f, 1f);
             garageName.onEndEdit.AddListener(v =>
             {
                 if (string.IsNullOrWhiteSpace(v)) v = "Player" + Random.Range(100, 999);
@@ -323,29 +428,18 @@ namespace TankBattle.UI
                 if (_nameField != null) _nameField.text = GameSession.PlayerName;
             });
 
-            var colorLabel = UIFactory.CreateText(left, "ColorLabel", "TANK COLOR",
-                28, UIFactory.TextDim);
-            ((RectTransform)colorLabel.transform).sizeDelta = new Vector2(800, 36);
+            SectionLabel("ColorLabel", "TANK COLOUR");
 
-            // Two rows of four color swatches.
+            // Two rows of four colour swatches.
             _colorButtons.Clear();
             for (int row = 0; row < 2; row++)
             {
-                var rowGo = new GameObject($"ColorRow{row}", typeof(RectTransform));
-                rowGo.transform.SetParent(left, false);
-                var rowRt = (RectTransform)rowGo.transform;
-                rowRt.sizeDelta = new Vector2(820, 92);
-                var h = rowGo.AddComponent<HorizontalLayoutGroup>();
-                h.spacing = 16;
-                h.childAlignment = TextAnchor.MiddleCenter;
-                h.childControlWidth = false; h.childControlHeight = false;
-                h.childForceExpandWidth = false; h.childForceExpandHeight = false;
-
+                var rowRt = OptionRow($"ColorRow{row}", 74);
                 for (int i = 0; i < 4; i++)
                 {
                     int index = row * 4 + i;
                     var b = UIFactory.CreateButton(rowRt, $"Color{index}", "",
-                        new Vector2(180, 84), GameConstants.PlayerColors[index], () =>
+                        new Vector2(198, 70), GameConstants.PlayerColors[index], () =>
                         {
                             GameSession.TankColorIndex = index;
                             SettingsManager.SavedTankColor = index;
@@ -356,19 +450,9 @@ namespace TankBattle.UI
                 }
             }
 
-            var styleLabel = UIFactory.CreateText(left, "StyleLabel", "BODY STYLE",
-                28, UIFactory.TextDim);
-            ((RectTransform)styleLabel.transform).sizeDelta = new Vector2(800, 36);
+            SectionLabel("StyleLabel", "BODY STYLE");
 
-            var styleRow = new GameObject("StyleRow", typeof(RectTransform));
-            styleRow.transform.SetParent(left, false);
-            var styleRt = (RectTransform)styleRow.transform;
-            styleRt.sizeDelta = new Vector2(820, 92);
-            var sh = styleRow.AddComponent<HorizontalLayoutGroup>();
-            sh.spacing = 16;
-            sh.childAlignment = TextAnchor.MiddleCenter;
-            sh.childControlWidth = false; sh.childControlHeight = false;
-            sh.childForceExpandWidth = false; sh.childForceExpandHeight = false;
+            var styleRt = OptionRow("StyleRow", 76);
 
             // Built-in hulls first, then any 3D models found in
             // Assets/Resources/TankModels (drop .fbx/.glb files there and they
@@ -376,7 +460,7 @@ namespace TankBattle.UI
             _styleButtons.Clear();
             int builtInStyles = GameConstants.TankStyleNames.Length;
             int totalStyles = builtInStyles + TankModelLibrary.Count;
-            float styleBtnW = totalStyles <= 3 ? 258f : (totalStyles <= 5 ? 158f : 118f);
+            float styleBtnW = totalStyles <= 3 ? 270f : (totalStyles <= 5 ? 160f : 118f);
 
             for (int i = 0; i < totalStyles; i++)
             {
@@ -385,7 +469,7 @@ namespace TankBattle.UI
                     ? GameConstants.TankStyleNames[i]
                     : TankModelLibrary.Names[i - builtInStyles];
                 var b = UIFactory.CreateButton(styleRt, $"Style{i}",
-                    label, new Vector2(styleBtnW, 84),
+                    label, new Vector2(styleBtnW, 72),
                     UIFactory.PanelLight, () =>
                     {
                         GameSession.TankStyleIndex = index;
@@ -396,25 +480,15 @@ namespace TankBattle.UI
                 _styleButtons.Add(b);
             }
 
-            var patLabel = UIFactory.CreateText(left, "PatLabel", "CAMO PATTERN", 28, UIFactory.TextDim);
-            ((RectTransform)patLabel.transform).sizeDelta = new Vector2(800, 34);
+            SectionLabel("PatLabel", "CAMO PATTERN");
 
-            var patRow = new GameObject("PatternRow", typeof(RectTransform));
-            patRow.transform.SetParent(left, false);
-            var patRt = (RectTransform)patRow.transform;
-            patRt.sizeDelta = new Vector2(820, 84);
-            var ph = patRow.AddComponent<HorizontalLayoutGroup>();
-            ph.spacing = 14;
-            ph.childAlignment = TextAnchor.MiddleCenter;
-            ph.childControlWidth = false; ph.childControlHeight = false;
-            ph.childForceExpandWidth = false; ph.childForceExpandHeight = false;
-
+            var patRt = OptionRow("PatternRow", 74);
             _patternButtons.Clear();
             for (int i = 0; i < GameConstants.TankPatternNames.Length; i++)
             {
                 int index = i;
                 var b = UIFactory.CreateButton(patRt, $"Pattern{i}",
-                    GameConstants.TankPatternNames[i], new Vector2(190, 76),
+                    GameConstants.TankPatternNames[i], new Vector2(198, 70),
                     UIFactory.PanelLight, () =>
                     {
                         GameSession.TankPatternIndex = index;
@@ -425,33 +499,64 @@ namespace TankBattle.UI
                 _patternButtons.Add(b);
             }
 
-            _garageStats = UIFactory.CreateText(left, "Stats", "", 26, UIFactory.TextColor,
-                TextAnchor.MiddleCenter);
-            ((RectTransform)_garageStats.transform).sizeDelta = new Vector2(820, 110);
+            _garageStats = UIFactory.CreateText(leftRt, "Stats", "", 25, UIFactory.TextColor,
+                TextAnchor.UpperLeft);
+            ((RectTransform)_garageStats.transform).sizeDelta = new Vector2(840, 104);
 
-            _garagePreview = UIFactory.CreateText(left, "Preview", "", 28, UIFactory.TextColor);
-            ((RectTransform)_garagePreview.transform).sizeDelta = new Vector2(800, 42);
-
-            UIFactory.CreateButton(left, "Back", "SAVE & BACK", new Vector2(420, 78),
-                UIFactory.AccentGreen, () => Show(_homePanel));
+            _garagePreview = UIFactory.CreateText(leftRt, "Preview", "", 25, UIFactory.TextDim,
+                TextAnchor.MiddleLeft);
+            ((RectTransform)_garagePreview.transform).sizeDelta = new Vector2(840, 34);
 
             // ---- right column: live rotating 3D preview ----
             var frame = UIFactory.CreatePanel(_garagePanel, "PreviewFrame",
-                UIFactory.PanelLight, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                UIFactory.PanelLight, new Vector2(1f, 1f), new Vector2(1f, 1f),
                 Vector2.zero, Vector2.zero);
-            frame.sizeDelta = new Vector2(560, 560);
-            frame.anchoredPosition = new Vector2(430, -40);
+            frame.pivot = new Vector2(1f, 1f);
+            frame.sizeDelta = new Vector2(660, 620);
+            frame.anchoredPosition = new Vector2(-34, -110);
+            var frameImg = frame.GetComponent<Image>();
+            frameImg.sprite = UIFactory.RoundedSprite;
+            frameImg.type = Image.Type.Sliced;
 
             var rawGo = new GameObject("Preview3D", typeof(RawImage));
             rawGo.transform.SetParent(frame, false);
             _previewImage = rawGo.GetComponent<RawImage>();
             _previewImage.raycastTarget = false;
             UIFactory.Stretch((RectTransform)rawGo.transform,
-                new Vector2(8, 8), new Vector2(-8, -8));
+                new Vector2(10, 10), new Vector2(-10, -10));
 
-            var hint = UIFactory.CreateText(_garagePanel, "Hint", "LIVE PREVIEW",
-                24, UIFactory.TextDim);
-            UIFactory.SetAnchoredPos(hint, new Vector2(0.5f, 0.5f), new Vector2(430, -350));
+            var hint = UIFactory.CreateText(_garagePanel, "Hint",
+                "LIVE PREVIEW", 24, UIFactory.TextDim);
+            UIFactory.SetAnchoredPos(hint, new Vector2(1f, 1f), new Vector2(-364, -762));
+
+            // ---- action bar: pinned to the bottom, never pushed by content ----
+            var bar = UIFactory.CreatePanel(_garagePanel, "ActionBar",
+                new Color(0f, 0f, 0f, 0.22f),
+                new Vector2(0f, 0f), new Vector2(1f, 0f), Vector2.zero, Vector2.zero);
+            bar.pivot = new Vector2(0.5f, 0f);
+            bar.sizeDelta = new Vector2(0, 116);
+            bar.anchoredPosition = Vector2.zero;
+            bar.GetComponent<Image>().raycastTarget = false;
+
+            var save = UIFactory.CreateButton(bar, "Back", "SAVE & BACK",
+                new Vector2(460, 82), UIFactory.AccentGreen, () => Show(_homePanel));
+            UIFactory.SetAnchoredPos(save, new Vector2(0.5f, 0.5f), new Vector2(120, 0));
+
+            UIFactory.CreateButton(bar, "Reset", "RESET",
+                new Vector2(240, 82), UIFactory.PanelLight, () =>
+                {
+                    GameSession.TankColorIndex = 0;
+                    GameSession.TankStyleIndex = 0;
+                    GameSession.TankPatternIndex = 0;
+                    SettingsManager.SavedTankColor = 0;
+                    SettingsManager.SavedTankStyle = 0;
+                    SettingsManager.SavedTankPattern = 0;
+                    HighlightGarage();
+                    RefreshPreviewTank();
+                }, 28);
+            var resetBtn = bar.Find("Reset");
+            if (resetBtn != null)
+                UIFactory.SetAnchoredPos(resetBtn, new Vector2(0.5f, 0.5f), new Vector2(-240, 0));
 
             HighlightGarage();
         }
@@ -764,6 +869,14 @@ namespace TankBattle.UI
                     GameSession.SelectedTimeIndex = _selectedTime;
                     GameSession.SoloMode = _soloIntent;
 
+                    if (_onlineIntent)
+                    {
+                        // Internet match: Relay gives us a room + a join code,
+                        // and starts the host on it. Handled asynchronously.
+                        StartOnlineHost();
+                        return;
+                    }
+
                     if (!ConnectionManager.Instance.StartHost(advertise: !_soloIntent))
                     {
                         _noticeText.text = "Could not start host (port in use?)";
@@ -784,13 +897,17 @@ namespace TankBattle.UI
         }
 
         /// <summary>Open the match-setup screen for hosting or for a solo battle.</summary>
-        void OpenMatchSetup(bool solo)
+        void OpenMatchSetup(bool solo, bool online = false)
         {
             _soloIntent = solo;
+            _onlineIntent = online;
             if (_hostTitle != null)
-                _hostTitle.text = solo ? "SOLO BATTLE  ·  YOU VS 5 BOTS" : "MATCH SETUP";
+                _hostTitle.text = solo ? "SOLO BATTLE  ·  YOU VS 5 BOTS"
+                                : online ? "ONLINE ROOM  ·  MATCH SETUP" : "MATCH SETUP";
             if (_startHostLabel != null)
-                _startHostLabel.text = solo ? "START BATTLE" : "START HOSTING";
+                _startHostLabel.text = solo ? "START BATTLE"
+                                     : online ? "CREATE ROOM" : "START HOSTING";
+            HighlightSelectors();
             Show(_hostPanel);
         }
 
@@ -839,15 +956,22 @@ namespace TankBattle.UI
         void BuildLobbyPanel()
         {
             _lobbyPanel = UIFactory.CreateCenterPanel(_canvas.transform, "LobbyPanel",
-                UIFactory.PanelColor, new Vector2(860, 800));
-            UIFactory.AddVerticalLayout(_lobbyPanel, 16, new RectOffset(30, 30, 24, 24));
+                UIFactory.PanelColor, new Vector2(880, 860));
+            UIFactory.AddVerticalLayout(_lobbyPanel, 14, new RectOffset(30, 30, 24, 24));
 
             var title = UIFactory.CreateText(_lobbyPanel, "Title", "LOBBY", 44, UIFactory.TextColor);
             ((RectTransform)title.transform).sizeDelta = new Vector2(700, 60);
 
+            // Only visible for internet rooms - this is the code friends type in.
+            _lobbyCodeText = UIFactory.CreateText(_lobbyPanel, "RoomCode", "", 36,
+                new Color(0.30f, 0.85f, 1f, 1f));
+            _lobbyCodeText.fontStyle = FontStyle.Bold;
+            ((RectTransform)_lobbyCodeText.transform).sizeDelta = new Vector2(740, 52);
+            _lobbyCodeText.gameObject.SetActive(false);
+
             _lobbyPlayersText = UIFactory.CreateText(_lobbyPanel, "Players", "", 26,
                 UIFactory.TextColor, TextAnchor.UpperCenter);
-            ((RectTransform)_lobbyPlayersText.transform).sizeDelta = new Vector2(740, 420);
+            ((RectTransform)_lobbyPlayersText.transform).sizeDelta = new Vector2(760, 380);
 
             _lobbyStatusText = UIFactory.CreateText(_lobbyPanel, "Status", "", 26, UIFactory.TextDim);
             ((RectTransform)_lobbyStatusText.transform).sizeDelta = new Vector2(740, 44);
@@ -896,6 +1020,158 @@ namespace TankBattle.UI
             }
         }
 
+        // --------------------------------------------------------------- online
+
+        /// <summary>
+        /// The internet-play screen. LAN play is unchanged and still on the
+        /// menu - this is a second route for friends who are not on the same
+        /// Wi-Fi. The host creates a room and reads out a short code; everyone
+        /// else types that code. Unity Relay carries the traffic, so nobody
+        /// needs a public IP or router settings.
+        /// </summary>
+        void BuildOnlinePanel()
+        {
+            _onlinePanel = UIFactory.CreateCenterPanel(_canvas.transform, "OnlinePanel",
+                UIFactory.PanelColor, new Vector2(1080, 880));
+            var img = _onlinePanel.GetComponent<Image>();
+            img.sprite = UIFactory.RoundedSprite;
+            img.type = Image.Type.Sliced;
+
+            var header = UIFactory.CreatePanel(_onlinePanel, "Header",
+                new Color(0.20f, 0.72f, 1f, 0.12f),
+                new Vector2(0f, 1f), new Vector2(1f, 1f), Vector2.zero, Vector2.zero);
+            header.pivot = new Vector2(0.5f, 1f);
+            header.sizeDelta = new Vector2(0, 92);
+            header.anchoredPosition = Vector2.zero;
+            header.GetComponent<Image>().raycastTarget = false;
+
+            var title = UIFactory.CreateText(header, "Title", "PLAY ONLINE", 44,
+                UIFactory.TextColor, TextAnchor.MiddleLeft);
+            title.fontStyle = FontStyle.Bold;
+            UIFactory.SetAnchoredPos(title, new Vector2(0f, 0.5f), new Vector2(44, 0));
+            ((RectTransform)title.transform).sizeDelta = new Vector2(500, 56);
+
+            var body = new GameObject("Body", typeof(RectTransform));
+            body.transform.SetParent(_onlinePanel, false);
+            var brt = (RectTransform)body.transform;
+            brt.anchorMin = brt.anchorMax = new Vector2(0.5f, 1f);
+            brt.pivot = new Vector2(0.5f, 1f);
+            brt.sizeDelta = new Vector2(1000, 660);
+            brt.anchoredPosition = new Vector2(0, -104);
+            UIFactory.AddVerticalLayout(brt, 14, new RectOffset(0, 0, 0, 0));
+
+            var blurb = UIFactory.CreateText(brt, "Blurb",
+                "Play with friends anywhere in the world. One person creates a room " +
+                "and shares the code - everyone else types it in.",
+                25, UIFactory.TextDim);
+            ((RectTransform)blurb.transform).sizeDelta = new Vector2(980, 40);
+
+            // ---- create ----
+            UIFactory.CreateMenuButton(brt, "Create", "CREATE ROOM",
+                "you host - pick the map, then share the code",
+                new Color(0.20f, 0.72f, 1f, 1f),
+                () => OpenMatchSetup(solo: false, online: true), new Vector2(980, 96));
+
+            var orLabel = UIFactory.CreateText(brt, "Or", "- OR -", 24, UIFactory.TextDim);
+            ((RectTransform)orLabel.transform).sizeDelta = new Vector2(980, 32);
+
+            // ---- join ----
+            var codeRow = new GameObject("CodeRow", typeof(RectTransform));
+            codeRow.transform.SetParent(brt, false);
+            ((RectTransform)codeRow.transform).sizeDelta = new Vector2(980, 90);
+            var ch = codeRow.AddComponent<HorizontalLayoutGroup>();
+            ch.spacing = 14;
+            ch.childAlignment = TextAnchor.MiddleCenter;
+            ch.childControlWidth = false; ch.childControlHeight = false;
+            ch.childForceExpandWidth = false; ch.childForceExpandHeight = false;
+
+            _roomCodeField = UIFactory.CreateInputField(codeRow.transform, "RoomCode",
+                "ROOM CODE", new Vector2(620, 82), 36);
+            _roomCodeField.text = SettingsManager.LastRoomCode;
+            _roomCodeField.characterLimit = 8;
+            var rcImg = _roomCodeField.GetComponent<Image>();
+            rcImg.sprite = UIFactory.RoundedSprite;
+            rcImg.type = Image.Type.Sliced;
+            rcImg.color = new Color(0.06f, 0.08f, 0.12f, 1f);
+
+            UIFactory.CreateButton(codeRow.transform, "JoinRoom", "JOIN",
+                new Vector2(320, 82), UIFactory.AccentGreen, JoinOnlineRoom, 32);
+
+            _onlineStatus = UIFactory.CreateText(brt, "OnlineStatus", "", 25,
+                new Color(1f, 0.80f, 0.35f, 1f));
+            ((RectTransform)_onlineStatus.transform).sizeDelta = new Vector2(980, 76);
+
+            // ---- advanced: cloud project id ----
+            var idLabel = UIFactory.CreateText(brt, "IdLabel",
+                "UNITY CLOUD PROJECT ID  (only needed once)", 22, UIFactory.TextDim);
+            ((RectTransform)idLabel.transform).sizeDelta = new Vector2(980, 30);
+
+            _projectIdField = UIFactory.CreateInputField(brt, "ProjectId",
+                "paste your project id here", new Vector2(980, 68), 24);
+            _projectIdField.text = SettingsManager.CloudProjectId;
+            _projectIdField.onEndEdit.AddListener(v =>
+            {
+                SettingsManager.CloudProjectId = v.Trim();
+                RefreshOnlineStatus("Project ID saved. Try CREATE ROOM now.");
+            });
+            var pidImg = _projectIdField.GetComponent<Image>();
+            pidImg.sprite = UIFactory.RoundedSprite;
+            pidImg.type = Image.Type.Sliced;
+            pidImg.color = new Color(0.06f, 0.08f, 0.12f, 1f);
+
+            // ---- action bar ----
+            var bar = UIFactory.CreatePanel(_onlinePanel, "ActionBar",
+                new Color(0f, 0f, 0f, 0.22f),
+                new Vector2(0f, 0f), new Vector2(1f, 0f), Vector2.zero, Vector2.zero);
+            bar.pivot = new Vector2(0.5f, 0f);
+            bar.sizeDelta = new Vector2(0, 106);
+            bar.anchoredPosition = Vector2.zero;
+            bar.GetComponent<Image>().raycastTarget = false;
+
+            var back = UIFactory.CreateButton(bar, "Back", "BACK",
+                new Vector2(340, 76), UIFactory.PanelLight, () => Show(_homePanel));
+            UIFactory.SetAnchoredPos(back, new Vector2(0.5f, 0.5f), Vector2.zero);
+        }
+
+        void RefreshOnlineStatus(string fallback = "")
+        {
+            if (_onlineStatus == null) return;
+            _onlineStatus.text = string.IsNullOrEmpty(OnlineManager.Status)
+                ? fallback : OnlineManager.Status;
+        }
+
+        /// <summary>Create the Relay room, then show the lobby with the code.</summary>
+        async void StartOnlineHost()
+        {
+            if (_noticeText != null) _noticeText.text = "Creating online room...";
+            string code = await OnlineManager.HostOnline();
+
+            if (string.IsNullOrEmpty(code))
+            {
+                if (_noticeText != null) _noticeText.text = OnlineManager.Status;
+                RefreshOnlineStatus();
+                Show(_onlinePanel);
+                return;
+            }
+
+            if (_noticeText != null) _noticeText.text = "";
+            Show(_lobbyPanel);
+            RefreshLobby();
+        }
+
+        /// <summary>Join someone else's Relay room by code.</summary>
+        async void JoinOnlineRoom()
+        {
+            string code = _roomCodeField != null ? _roomCodeField.text : "";
+            SettingsManager.LastRoomCode = code;
+            RefreshOnlineStatus("Connecting...");
+            if (_onlineStatus != null) _onlineStatus.text = "Connecting...";
+
+            bool ok = await OnlineManager.JoinOnline(code);
+            RefreshOnlineStatus();
+            if (ok) Show(_lobbyPanel);
+        }
+
         void RefreshLobby()
         {
             var nm = NetworkManager.Singleton;
@@ -912,6 +1188,16 @@ namespace TankBattle.UI
                 }
             }
             _lobbyPlayersText.text = count > 0 ? sb.ToString() : "Connecting...";
+
+            // Online rooms: put the join code where the host can read it out.
+            if (_lobbyCodeText != null)
+            {
+                bool online = OnlineManager.IsOnlineSession &&
+                              !string.IsNullOrEmpty(OnlineManager.JoinCode);
+                _lobbyCodeText.gameObject.SetActive(online);
+                if (online)
+                    _lobbyCodeText.text = $"ROOM CODE:   {OnlineManager.JoinCode}";
+            }
 
             _startMatchButton.gameObject.SetActive(isHost);
             _lobbyStatusText.text = isHost
@@ -961,6 +1247,7 @@ namespace TankBattle.UI
             _joinPanel.gameObject.SetActive(panel == _joinPanel);
             _lobbyPanel.gameObject.SetActive(panel == _lobbyPanel);
             _settingsPanel.gameObject.SetActive(panel == _settingsPanel);
+            if (_onlinePanel != null) _onlinePanel.gameObject.SetActive(panel == _onlinePanel);
         }
     }
 }

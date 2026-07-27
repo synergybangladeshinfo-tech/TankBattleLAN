@@ -60,6 +60,114 @@ namespace TankBattle.UI
             }
         }
 
+        static Sprite _softGlow;
+        /// <summary>
+        /// Radial glow that fades smoothly to fully transparent at the edge.
+        /// v3.1: the menu used to use CircleSprite for the title glow, and
+        /// because that sprite has a HARD edge it drew a visible ellipse right
+        /// across the title - "lekhar upore chokor". This one has no edge.
+        /// </summary>
+        public static Sprite SoftGlowSprite
+        {
+            get
+            {
+                if (_softGlow != null) return _softGlow;
+                const int size = 256;
+                var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+                var px = new Color32[size * size];
+                Vector2 c = new Vector2(size * 0.5f, size * 0.5f);
+                float maxD = size * 0.5f;
+                for (int y = 0; y < size; y++)
+                    for (int x = 0; x < size; x++)
+                    {
+                        float d = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), c) / maxD;
+                        // squared smoothstep falloff -> no visible boundary
+                        float a = Mathf.Clamp01(1f - d);
+                        a = a * a * (3f - 2f * a) * a;
+                        px[y * size + x] = new Color(1f, 1f, 1f, a);
+                    }
+                tex.SetPixels32(px);
+                tex.Apply();
+                tex.wrapMode = TextureWrapMode.Clamp;
+                _softGlow = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+                return _softGlow;
+            }
+        }
+
+        static Sprite _emblem;
+        /// <summary>
+        /// The game's logo mark: an angular shield with a tank silhouette cut
+        /// into it. Drawn procedurally so it ships with zero binary assets and
+        /// stays crisp at any size.
+        /// </summary>
+        public static Sprite EmblemSprite
+        {
+            get
+            {
+                if (_emblem != null) return _emblem;
+                const int S = 256;
+                var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
+                var px = new Color32[S * S];
+
+                Color plate = new Color(0.10f, 0.14f, 0.20f);
+                Color steel = new Color(0.62f, 0.68f, 0.78f);
+                Color amber = new Color(1.00f, 0.62f, 0.18f);
+
+                for (int y = 0; y < S; y++)
+                    for (int x = 0; x < S; x++)
+                    {
+                        float u = x / (float)(S - 1);      // 0..1 left->right
+                        float v = y / (float)(S - 1);      // 0..1 bottom->top
+                        float cx = (u - 0.5f) * 2f;        // -1..1
+
+                        // --- shield outline: straight sides, pointed bottom ---
+                        float topY = 0.94f;
+                        float shoulderY = 0.42f;
+                        float halfW = v > shoulderY
+                            ? 0.86f
+                            : Mathf.Lerp(0.0f, 0.86f, Mathf.Clamp01(v / shoulderY));
+                        bool inside = v <= topY && Mathf.Abs(cx) <= halfW && v >= 0.04f;
+                        bool border = inside &&
+                            (Mathf.Abs(Mathf.Abs(cx) - halfW) < 0.075f || v > topY - 0.05f);
+
+                        Color col = new Color(0, 0, 0, 0);
+                        if (inside) col = border ? amber : plate;
+
+                        // --- tank silhouette inside the shield ---
+                        if (inside && !border)
+                        {
+                            // hull
+                            bool hull = v > 0.34f && v < 0.50f && Mathf.Abs(cx) < 0.58f;
+                            // track band
+                            bool track = v > 0.26f && v <= 0.34f && Mathf.Abs(cx) < 0.62f;
+                            // turret
+                            bool turret = v >= 0.50f && v < 0.62f && Mathf.Abs(cx) < 0.34f;
+                            // barrel pointing right
+                            bool barrel = v >= 0.53f && v < 0.585f && cx >= 0.30f && cx < 0.80f;
+                            if (hull || track || turret || barrel) col = steel;
+
+                            // road wheels punched out of the track band
+                            if (track)
+                            {
+                                float wx = (cx + 0.62f) / 1.24f * 5f;
+                                if (Mathf.Abs(wx - Mathf.Round(wx)) < 0.22f) col = plate;
+                            }
+                            // muzzle flash notch
+                            if (v >= 0.545f && v < 0.595f && cx >= 0.80f && cx < 0.86f) col = amber;
+                        }
+
+                        px[y * S + x] = col;
+                    }
+
+                tex.SetPixels32(px);
+                tex.Apply();
+                tex.filterMode = FilterMode.Bilinear;
+                tex.wrapMode = TextureWrapMode.Clamp;
+                _emblem = Sprite.Create(tex, new Rect(0, 0, S, S), new Vector2(0.5f, 0.5f));
+                return _emblem;
+            }
+        }
+
         static Sprite _vignette;
         /// <summary>Soft dark-corner vignette overlay (subtle "cinematic" feel).</summary>
         public static Sprite VignetteSprite
