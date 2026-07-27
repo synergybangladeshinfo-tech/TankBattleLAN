@@ -43,7 +43,15 @@ namespace TankBattle.Gameplay
         }
 
         public static int Count => Prefabs.Length;
-        public static bool HasModels => Count > 0;
+
+        /// <summary>
+        /// Imported models are far heavier than the built-in hulls (the Meshy
+        /// tanks are ~100k triangles each, versus a few hundred). On the "Low"
+        /// graphics setting we quietly fall back to the procedural hulls so old
+        /// phones keep a playable frame rate with 16 tanks on screen.
+        /// </summary>
+        public static bool HasModels =>
+            Count > 0 && TankBattle.Core.SettingsManager.Quality > 0;
 
         static void EnsureLoaded()
         {
@@ -147,7 +155,14 @@ namespace TankBattle.Gameplay
                 SetLayerRecursively(child.gameObject, layer);
         }
 
-        /// <summary>Tint every material on an imported model with the player colour.</summary>
+        /// <summary>
+        /// Tint every material on an imported model with the player colour.
+        /// Different importers name the base-colour property differently -
+        /// Unity's Standard shader uses "_Color", glTFast's glTF shaders use
+        /// "_BaseColor" - so try each in turn instead of assuming one.
+        /// </summary>
+        static readonly string[] ColorProperties = { "_BaseColor", "_Color", "baseColorFactor" };
+
         public static void Tint(GameObject model, Color color)
         {
             if (model == null) return;
@@ -156,11 +171,18 @@ namespace TankBattle.Gameplay
                 var mats = r.materials;              // instance copies
                 for (int i = 0; i < mats.Length; i++)
                 {
-                    if (mats[i] == null) continue;
+                    var m = mats[i];
+                    if (m == null) continue;
+
                     // Keep the model's own texture detail, just push it toward
                     // the team/player colour so tanks stay tellable apart.
-                    if (mats[i].HasProperty("_Color"))
-                        mats[i].color = Color.Lerp(mats[i].color, color, 0.65f);
+                    for (int p = 0; p < ColorProperties.Length; p++)
+                    {
+                        if (!m.HasProperty(ColorProperties[p])) continue;
+                        Color baseCol = m.GetColor(ColorProperties[p]);
+                        m.SetColor(ColorProperties[p], Color.Lerp(baseCol, color, 0.55f));
+                        break;
+                    }
                 }
                 r.materials = mats;
             }
