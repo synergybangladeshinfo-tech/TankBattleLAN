@@ -152,7 +152,7 @@ namespace TankBattle.UI
                 "OFFLINE  ·  WI-FI / HOTSPOT  ·  16 PLAYERS  ·  5 MODES", 26, UIFactory.TextDim);
             UIFactory.SetAnchoredPos(sub, new Vector2(0.5f, 1f), new Vector2(0, -212));
 
-            var ver = UIFactory.CreateText(_canvas.transform, "Version", "v2.7", 22,
+            var ver = UIFactory.CreateText(_canvas.transform, "Version", "v2.8", 22,
                 new Color(0.45f, 0.50f, 0.58f, 1f));
             UIFactory.SetAnchoredPos(ver, new Vector2(1f, 0f), new Vector2(-30, 26));
 
