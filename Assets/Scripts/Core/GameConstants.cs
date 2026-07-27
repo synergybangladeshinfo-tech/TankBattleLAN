@@ -138,6 +138,32 @@ namespace TankBattle.Core
         public const float GrenadeSplashRadius = 5.5f;
         public const float GrenadeFuse = 1.5f;      // seconds before it blows
 
+        // ---- Hover / jetpack ----
+        public const float HoverThrust = 11f;       // upward m/s while hovering
+        public const float HoverMaxRise = 9f;       // metres above the ground you may climb
+        public const float HoverFuelMax = 3.0f;     // seconds of continuous hover
+        public const float HoverFuelRegen = 0.7f;   // fuel-seconds regained per second
+        public const float HoverFuelMinToStart = 0.35f; // stops fluttering on empty
+
+        // ---- Mine (deployable) ----
+        public const float MineArmDelay = 1.0f;     // seconds before it can trigger
+        public const float MineTriggerRadius = 3.2f;
+        public const int MineDamage = 70;
+        public const float MineSplashRadius = 5.0f;
+        public const float MineLifetime = 45f;      // despawns if nobody trips it
+
+        // ---- Minimap ----
+        /// <summary>Half-size of the world area drawn on the minimap (metres).</summary>
+        public const float MinimapWorldRadius = 60f;
+
+        // ---- Kill feed / killstreaks ----
+        public const int KillFeedMaxRows = 5;
+        public const float KillFeedRowSeconds = 5f;
+        /// <summary>Streak counts that trigger an announcement, with their titles.</summary>
+        public static readonly int[] StreakMilestones = { 3, 5, 7, 10 };
+        public static readonly string[] StreakTitles =
+        { "TRIPLE KILL", "RAMPAGE", "UNSTOPPABLE", "GODLIKE" };
+
         /// <summary>Per-style (moveSpeed, turnSpeed) multipliers - small, fair differences.</summary>
         public static readonly Vector2[] TankStyleSpeed =
         {
