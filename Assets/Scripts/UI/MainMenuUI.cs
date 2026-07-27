@@ -23,7 +23,7 @@ namespace TankBattle.UI
     {
         Canvas _canvas;
         RectTransform _homePanel, _garagePanel, _hostPanel, _joinPanel, _lobbyPanel, _settingsPanel;
-        RectTransform _onlinePanel;
+        RectTransform _onlinePanel, _updateBanner;
         InputField _roomCodeField, _projectIdField;
         Text _onlineStatus, _lobbyCodeText;
         InputField _nameField;
@@ -75,6 +75,12 @@ namespace TankBattle.UI
             BuildOnlinePanel();
             _settingsPanel = SettingsPanel.Build(_canvas.transform, () => Show(_homePanel));
 
+            BuildUpdateBanner();
+            UpdateChecker.OnUpdateFound -= ShowUpdateBanner;
+            UpdateChecker.OnUpdateFound += ShowUpdateBanner;
+            UpdateChecker.Check(this);
+            if (UpdateChecker.UpdateAvailable) ShowUpdateBanner();
+
             _selectedMap = GameSession.SelectedMapIndex;
             _selectedMode = GameSession.SelectedModeIndex;
             _selectedTime = GameSession.SelectedTimeIndex;
@@ -122,6 +128,7 @@ namespace TankBattle.UI
 
         void OnDestroy()
         {
+            UpdateChecker.OnUpdateFound -= ShowUpdateBanner;
             if (_previewRT != null) { _previewRT.Release(); _previewRT = null; }
             if (_previewRig != null) Destroy(_previewRig);
         }
@@ -1131,6 +1138,62 @@ namespace TankBattle.UI
             var back = UIFactory.CreateButton(bar, "Back", "BACK",
                 new Vector2(340, 76), UIFactory.PanelLight, () => Show(_homePanel));
             UIFactory.SetAnchoredPos(back, new Vector2(0.5f, 0.5f), Vector2.zero);
+        }
+
+        /// <summary>
+        /// "New version available" strip along the bottom of the menu. It sits
+        /// on the canvas rather than inside a panel, so it stays visible on
+        /// every screen until the player updates. One tap opens the download -
+        /// Android installs it over the top and keeps their name, garage and
+        /// control layout, so nobody has to be sent an APK by hand any more.
+        /// </summary>
+        void BuildUpdateBanner()
+        {
+            _updateBanner = UIFactory.CreatePanel(_canvas.transform, "UpdateBanner",
+                new Color(0.10f, 0.55f, 0.25f, 0.95f),
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), Vector2.zero, Vector2.zero);
+            _updateBanner.pivot = new Vector2(0.5f, 0f);
+            _updateBanner.sizeDelta = new Vector2(1120, 96);
+            _updateBanner.anchoredPosition = new Vector2(0, 18);
+            var img = _updateBanner.GetComponent<Image>();
+            img.sprite = UIFactory.RoundedSprite;
+            img.type = Image.Type.Sliced;
+
+            var label = UIFactory.CreateText(_updateBanner, "Label", "", 27,
+                Color.white, TextAnchor.MiddleLeft);
+            UIFactory.SetAnchoredPos(label, new Vector2(0f, 0.5f), new Vector2(34, 0));
+            ((RectTransform)label.transform).sizeDelta = new Vector2(760, 60);
+
+            var btn = UIFactory.CreateButton(_updateBanner, "UpdateNow", "UPDATE NOW",
+                new Vector2(300, 68), new Color(1f, 0.82f, 0.20f, 1f),
+                UpdateChecker.OpenDownload, 26);
+            UIFactory.SetAnchoredPos(btn, new Vector2(1f, 0.5f), new Vector2(-140, 0));
+            btn.GetComponentInChildren<Text>().color = new Color(0.08f, 0.10f, 0.06f, 1f);
+
+            var later = UIFactory.CreateButton(_updateBanner, "Later", "\u00D7",
+                new Vector2(56, 56), new Color(1f, 1f, 1f, 0.16f),
+                () => _updateBanner.gameObject.SetActive(false), 30);
+            UIFactory.SetAnchoredPos(later, new Vector2(1f, 0.5f), new Vector2(-46, 0));
+
+            _updateBanner.gameObject.SetActive(false);
+        }
+
+        void ShowUpdateBanner()
+        {
+            if (_updateBanner == null) return;
+            var label = _updateBanner.Find("Label");
+            if (label != null)
+            {
+                var t = label.GetComponent<Text>();
+                if (t != null)
+                {
+                    t.text = $"NEW VERSION {UpdateChecker.LatestVersion} IS OUT";
+                    if (!string.IsNullOrEmpty(UpdateChecker.LatestNotes))
+                        t.text += $"\n<size=21>{UpdateChecker.LatestNotes}</size>";
+                }
+            }
+            _updateBanner.gameObject.SetActive(true);
+            _updateBanner.SetAsLastSibling();
         }
 
         void RefreshOnlineStatus(string fallback = "")
