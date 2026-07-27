@@ -19,6 +19,7 @@ namespace TankBattle.Core
         const string KeyTankPattern = "tb_tank_pattern";
         const string KeyVibration = "tb_vibration";
         const string KeyBotDiff = "tb_bot_difficulty";
+        const string KeyHints = "tb_first_hints";
 
         public static bool MusicOn
         {
@@ -78,6 +79,13 @@ namespace TankBattle.Core
         {
             get => PlayerPrefs.GetInt(KeyBotDiff, 1);
             set { PlayerPrefs.SetInt(KeyBotDiff, Mathf.Clamp(value, 0, 2)); PlayerPrefs.Save(); }
+        }
+
+        /// <summary>True until the player has seen the one-time control hints.</summary>
+        public static bool ShowFirstTimeHints
+        {
+            get => PlayerPrefs.GetInt(KeyHints, 1) == 1;
+            set { PlayerPrefs.SetInt(KeyHints, value ? 1 : 0); PlayerPrefs.Save(); }
         }
 
         /// <summary>Raised whenever any setting changes (AudioManager listens).</summary>

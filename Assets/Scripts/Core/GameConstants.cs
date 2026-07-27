@@ -75,6 +75,26 @@ namespace TankBattle.Core
             "Fortress"
         };
 
+        /// <summary>Signature colour of each map, for the host-screen swatches.</summary>
+        public static readonly Color[] MapThemeColors =
+        {
+            new Color(0.82f, 0.66f, 0.40f), // Arena     - desert sand
+            new Color(0.42f, 0.47f, 0.55f), // Crossfire - cold concrete
+            new Color(0.36f, 0.58f, 0.34f), // Maze      - forest green
+            new Color(0.55f, 0.42f, 0.72f), // Pillars   - alien violet
+            new Color(0.70f, 0.48f, 0.36f)  // Fortress  - brick
+        };
+
+        /// <summary>Weather blurb shown under each map name.</summary>
+        public static readonly string[] MapWeatherLabels =
+        {
+            "DUST STORM",
+            "NIGHT",
+            "RAIN",
+            "CLEAR",
+            "NIGHT"
+        };
+
         /// <summary>UI names for the game modes, index-aligned with the GameMode enum.</summary>
         public static readonly string[] GameModeNames =
         {
@@ -155,6 +175,9 @@ namespace TankBattle.Core
         // ---- Minimap ----
         /// <summary>Half-size of the world area drawn on the minimap (metres).</summary>
         public const float MinimapWorldRadius = 72f;
+
+        /// <summary>Reload pause after a pickup weapon runs out of ammo.</summary>
+        public const float ReloadSeconds = 1.3f;
 
         // ---- Round flow ----
         /// <summary>Seconds of "3 - 2 - 1 - FIGHT" before tanks may move.</summary>
