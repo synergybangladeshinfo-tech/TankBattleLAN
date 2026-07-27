@@ -69,8 +69,9 @@ namespace TankBattle.Gameplay
                 }
             }
 
-            // AUTO-LOCK fallback: track the nearest enemy.
-            CurrentTarget = FindTarget();
+            // AUTO-LOCK fallback: track the nearest enemy. Players who prefer
+            // pure manual aiming can switch this off in Settings -> Aim assist.
+            CurrentTarget = TankBattle.Core.SettingsManager.AimAssistOn ? FindTarget() : null;
             if (CurrentTarget != null)
             {
                 Vector3 to = CurrentTarget.position - transform.position;
