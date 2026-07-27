@@ -18,6 +18,9 @@ namespace TankBattle.Core
         /// <summary>Garage: chosen hull camo pattern (index into GameConstants.TankPatternNames).</summary>
         public static int TankPatternIndex = 0;
 
+        /// <summary>Solo-mode AI difficulty: 0 = Easy, 1 = Normal, 2 = Hard.</summary>
+        public static int BotDifficulty = 1;
+
         /// <summary>Map scene index chosen by the host (index into GameConstants.MapScenes).</summary>
         public static int SelectedMapIndex = 0;
 

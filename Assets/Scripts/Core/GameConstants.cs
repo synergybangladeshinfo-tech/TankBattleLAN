@@ -156,6 +156,39 @@ namespace TankBattle.Core
         /// <summary>Half-size of the world area drawn on the minimap (metres).</summary>
         public const float MinimapWorldRadius = 72f;
 
+        // ---- Round flow ----
+        /// <summary>Seconds of "3 - 2 - 1 - FIGHT" before tanks may move.</summary>
+        public const float StartCountdown = 4f;
+        /// <summary>How long the camera stares at whoever killed you.</summary>
+        public const float DeathCamSeconds = 2.2f;
+
+        // ---- Quick chat ----
+        public static readonly string[] QuickChatPhrases =
+        {
+            "Help!",
+            "Attack!",
+            "Nice shot!",
+            "Enemy behind!"
+        };
+
+        // ---- AI difficulty ----
+        public static readonly string[] BotDifficultyNames = { "EASY", "NORMAL", "HARD" };
+        public static readonly string[] BotDifficultyHints =
+        {
+            "Slow, poor aim, keeps its distance",
+            "A fair fight",
+            "Fast, accurate and relentless"
+        };
+
+        // ---- Destructible props ----
+        public const int CrateHealth = 35;
+        public const int BarrelHealth = 25;
+        public const int BarrelBlastDamage = 55;
+        public const float BarrelBlastRadius = 6.5f;
+
+        // ---- Weather (per map) ----
+        public enum Weather { Clear = 0, Night = 1, Rain = 2, DustStorm = 3 }
+
         // ---- Kill feed / killstreaks ----
         public const int KillFeedMaxRows = 5;
         public const float KillFeedRowSeconds = 5f;

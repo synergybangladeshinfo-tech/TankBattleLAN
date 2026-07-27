@@ -17,6 +17,8 @@ namespace TankBattle.Core
         const string KeyTankColor = "tb_tank_color";
         const string KeyTankStyle = "tb_tank_style";
         const string KeyTankPattern = "tb_tank_pattern";
+        const string KeyVibration = "tb_vibration";
+        const string KeyBotDiff = "tb_bot_difficulty";
 
         public static bool MusicOn
         {
@@ -28,6 +30,13 @@ namespace TankBattle.Core
         {
             get => PlayerPrefs.GetInt(KeySfx, 1) == 1;
             set { PlayerPrefs.SetInt(KeySfx, value ? 1 : 0); PlayerPrefs.Save(); OnChanged?.Invoke(); }
+        }
+
+        /// <summary>Phone vibration on firing, taking hits and dying.</summary>
+        public static bool VibrationOn
+        {
+            get => PlayerPrefs.GetInt(KeyVibration, 1) == 1;
+            set { PlayerPrefs.SetInt(KeyVibration, value ? 1 : 0); PlayerPrefs.Save(); OnChanged?.Invoke(); }
         }
 
         /// <summary>0 = Low, 1 = Medium, 2 = High.</summary>
@@ -62,6 +71,13 @@ namespace TankBattle.Core
         {
             get => PlayerPrefs.GetInt(KeyTankPattern, 0);
             set { PlayerPrefs.SetInt(KeyTankPattern, value); PlayerPrefs.Save(); }
+        }
+
+        /// <summary>Solo-mode AI difficulty (0 Easy / 1 Normal / 2 Hard).</summary>
+        public static int SavedBotDifficulty
+        {
+            get => PlayerPrefs.GetInt(KeyBotDiff, 1);
+            set { PlayerPrefs.SetInt(KeyBotDiff, Mathf.Clamp(value, 0, 2)); PlayerPrefs.Save(); }
         }
 
         /// <summary>Raised whenever any setting changes (AudioManager listens).</summary>
