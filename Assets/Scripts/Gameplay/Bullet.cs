@@ -27,6 +27,8 @@ namespace TankBattle.Gameplay
         float _dieAt;
         Vector3 _hitPoint, _hitNormal = Vector3.up;   // surface we struck, for FX
         Color _visualColor = Color.white;              // set on every peer at spawn
+        bool _whizzed;                                 // near-miss sound played once
+        bool _visualShooterIsLocal;                    // suppress whiz on own shots
 
         /// <summary>Server: remember who fired for kill credit / team filtering.</summary>
         public void Init(ulong shooterId, int weaponIndex, int shooterTeam)
@@ -51,6 +53,14 @@ namespace TankBattle.Gameplay
                 if (mr != null) mr.material.color = def.BulletColor;
             }
             _visualColor = def.BulletColor;
+
+            // A bullet is "mine" if the tank that fired it is my player object;
+            // used to skip the near-miss whoosh on your own outgoing rounds.
+            var nm = NetworkManager.Singleton;
+            _visualShooterIsLocal = nm != null && nm.LocalClient != null &&
+                                    nm.LocalClient.PlayerObject != null &&
+                                    Vector3.Distance(transform.position,
+                                        nm.LocalClient.PlayerObject.transform.position) < 4f;
 
             var trail = GetComponentInChildren<TrailRenderer>();
             if (trail != null)
@@ -108,6 +118,29 @@ namespace TankBattle.Gameplay
             }
 
             transform.position += transform.forward * step;
+        }
+
+        /// <summary>
+        /// Every client watches enemy rounds fly past and plays a whiz when one
+        /// passes close to the camera. Runs off the replicated transform, so no
+        /// extra networking is needed - and it only fires once per bullet.
+        /// </summary>
+        void LateUpdate()
+        {
+            if (_whizzed || !IsSpawned) return;
+
+            var cam = Camera.main;
+            if (cam == null) return;
+
+            // Ignore your own shots leaving the barrel.
+            var nm = NetworkManager.Singleton;
+            if (nm != null && _visualShooterIsLocal) return;
+
+            float d = Vector3.Distance(transform.position, cam.transform.position);
+            if (d > 6.5f) return;
+
+            _whizzed = true;
+            AudioManager.Instance?.PlayWhizAt(transform.position);
         }
 
         bool IsTeammate(TankHealth victim)

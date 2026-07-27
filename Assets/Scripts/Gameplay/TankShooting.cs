@@ -29,6 +29,20 @@ namespace TankBattle.Gameplay
         public NetworkVariable<int> Weapon = new NetworkVariable<int>(0);
         public NetworkVariable<int> Ammo = new NetworkVariable<int>(-1);
 
+        /// <summary>Server time at which reloading finishes (0 = ready).</summary>
+        public NetworkVariable<float> ReloadUntil = new NetworkVariable<float>(0f);
+
+        /// <summary>Seconds of reload left, 0 when ready (for the HUD).</summary>
+        public float ReloadRemaining
+        {
+            get
+            {
+                if (!IsSpawned || NetworkManager == null) return 0f;
+                return Mathf.Max(0f,
+                    ReloadUntil.Value - (float)NetworkManager.ServerTime.Time);
+            }
+        }
+
         float _nextLocalFire;   // owner-side cooldown (responsiveness)
         float _nextServerFire;  // server-side cooldown (authority)
         float _nextGrenade;     // owner-side grenade cooldown
@@ -64,6 +78,7 @@ namespace TankBattle.Gameplay
             // extra range is actually usable. Any other weapon snaps back.
             UpdateZoom();
 
+            if (ReloadRemaining > 0f) return;      // still reloading
             if (!FirePressed() || Time.time < _nextLocalFire) return;
 
             _nextLocalFire = Time.time + Weapons.Get(Weapon.Value).FireInterval;
@@ -164,6 +179,8 @@ namespace TankBattle.Gameplay
             if (MatchManager.Instance != null && MatchManager.Instance.MatchEnded.Value) return;
             if (MatchManager.Instance != null && !MatchManager.Instance.RoundLive) return;
 
+            if (ReloadUntil.Value > (float)NetworkManager.ServerTime.Time) return;
+
             int weaponIndex = Weapon.Value;
             var def = Weapons.Get(weaponIndex);
             _nextServerFire = Time.time + def.FireInterval * 0.9f; // jitter tolerance
@@ -177,8 +194,13 @@ namespace TankBattle.Gameplay
                 Ammo.Value--;
                 if (Ammo.Value == 0)
                 {
+                    // Out of special ammo: a short reload before the standard
+                    // cannon is usable again. Being briefly defenceless makes
+                    // spending the last rocket an actual decision.
                     Weapon.Value = (int)WeaponType.Standard;
                     Ammo.Value = -1;
+                    ReloadUntil.Value = (float)NetworkManager.ServerTime.Time
+                                        + GameConstants.ReloadSeconds;
                 }
             }
 
