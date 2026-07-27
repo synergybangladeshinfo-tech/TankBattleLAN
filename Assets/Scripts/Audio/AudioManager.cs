@@ -37,7 +37,7 @@ namespace TankBattle.Audio
         int _nextVoice;
 
         AudioClip _menuMusic, _battleMusic;
-        AudioClip _hit, _explosion, _click, _victory, _pickup, _tick;
+        AudioClip _hit, _explosion, _click, _victory, _pickup, _tick, _whiz;
         AudioClip[] _shots; // index-aligned with Weapons.Defs
 
         void Awake()
@@ -123,6 +123,30 @@ namespace TankBattle.Audio
         }
 
         public void PlayHitAt(Vector3 pos) => PlayWorld(_hit, pos, 0.75f, Random.Range(0.9f, 1.1f));
+
+        /// <summary>
+        /// Enemy round passing close by. Deliberately NOT distance-attenuated
+        /// the usual way - a near miss should be startling, so it plays loud
+        /// and panned to whichever side it went past.
+        /// </summary>
+        public void PlayWhizAt(Vector3 pos)
+        {
+            if (!SettingsManager.SfxOn || _whiz == null || _sfxPool == null) return;
+            var cam = Camera.main;
+            float pan = 0f;
+            if (cam != null)
+                pan = Mathf.Clamp(Vector3.Dot((pos - cam.transform.position).normalized,
+                                              cam.transform.right), -1f, 1f) * 0.9f;
+
+            var src = _sfxPool[_nextVoice];
+            _nextVoice = (_nextVoice + 1) % _sfxPool.Length;
+            src.Stop();
+            src.clip = _whiz;
+            src.pitch = Random.Range(0.9f, 1.2f);
+            src.panStereo = pan;
+            src.volume = 0.55f;
+            src.Play();
+        }
         public void PlayExplosionAt(Vector3 pos) => PlayWorld(_explosion, pos, 1.0f, Random.Range(0.9f, 1.05f));
         public void PlayPickupAt(Vector3 pos) => PlayWorld(_pickup, pos, 0.85f);
 
@@ -279,6 +303,18 @@ namespace TankBattle.Audio
                 float clunk = Mathf.Sin(2f * Mathf.PI * 180f * t) * Mathf.Exp(-t * 30f);
                 float click = (Random.value * 2f - 1f) * Mathf.Exp(-t * 180f) * 0.7f;
                 return clunk + click;
+            }));
+
+            // Near miss: a fast doppler-ish whoosh past your head.
+            _whiz = Norm(Synth("whiz", 0.22f, t =>
+            {
+                float k = Mathf.Clamp01(t / 0.22f);
+                // Sweep down in pitch as it passes, like a real fly-by.
+                float freq = Mathf.Lerp(1500f, 420f, k);
+                float tone = Mathf.Sin(2f * Mathf.PI * freq * t);
+                float air = (Random.value * 2f - 1f) * 0.45f;
+                float env = Mathf.Sin(k * Mathf.PI);   // fade in AND out
+                return (tone * 0.7f + air) * env;
             }));
 
             // Bullet impact: short metallic ping.
