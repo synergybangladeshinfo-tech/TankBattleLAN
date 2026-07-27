@@ -167,9 +167,13 @@ namespace TankBattle.Core
         /// into the build, but it can be pasted in the Online screen so online
         /// can be switched on without waiting for a new APK.
         /// </summary>
+        /// <summary>The project this game ships with. Baked in so online works
+        /// the moment the app is installed - nobody has to type anything.</summary>
+        public const string DefaultCloudProjectId = "d1ad9907-bca8-4033-becb-ba4a99943f1d";
+
         public static string CloudProjectId
         {
-            get => PlayerPrefs.GetString(KeyCloudId, "");
+            get => PlayerPrefs.GetString(KeyCloudId, DefaultCloudProjectId);
             set { PlayerPrefs.SetString(KeyCloudId, value ?? ""); PlayerPrefs.Save(); }
         }
 
