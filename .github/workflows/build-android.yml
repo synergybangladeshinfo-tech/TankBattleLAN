@@ -14,6 +14,10 @@ on:
   push:
     branches: [ main ]
 
+# The release step needs to be able to create tags and releases in this repo.
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build APK
@@ -70,3 +74,23 @@ jobs:
         with:
           name: TankBattleLAN-APK
           path: build/Android
+
+      # Read the version the game will advertise in its update check.
+      - name: Read version
+        id: ver
+        run: |
+          echo "version=$(python3 -c "import json;print(json.load(open('version.json'))['version'])")" >> "$GITHUB_OUTPUT"
+          echo "code=$(python3 -c "import json;print(json.load(open('version.json'))['versionCode'])")" >> "$GITHUB_OUTPUT"
+
+      # Publish the APK as a GitHub Release asset. This gives it a permanent
+      # public URL - .../releases/latest/download/TankBattleLAN.apk - which is
+      # exactly what the in-game UPDATE button opens. Players update themselves;
+      # the APK never has to be sent to anyone by hand again.
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}-${{ steps.ver.outputs.code }}
+          name: Tank Battle v${{ steps.ver.outputs.version }}
+          files: build/Android/TankBattleLAN.apk
+          make_latest: true
+          fail_on_unmatched_files: false
