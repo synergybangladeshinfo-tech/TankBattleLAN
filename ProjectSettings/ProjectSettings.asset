@@ -248,12 +248,12 @@ PlayerSettings:
     Android: 6
   activeInputHandler: 0
   windowsGamepadBackendHint: 0
-  cloudProjectId:
+  cloudProjectId: d1ad9907-bca8-4033-becb-ba4a99943f1d
   framebufferDepthMemorylessMode: 0
   qualitySettingsNames: []
-  projectName:
+  projectName: TankBattleLAN
   organizationId:
-  cloudEnabled: 0
+  cloudEnabled: 1
   legacyClampBlendShapeWeights: 0
   playerDataPath:
   forceSRGBBlit: 1
