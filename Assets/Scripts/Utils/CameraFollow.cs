@@ -57,7 +57,11 @@ namespace TankBattle.Utils
         }
 
         /// <summary>Add a burst of camera shake (e.g. own weapon fire).</summary>
-        public void Shake(float amount) => _shake = Mathf.Max(_shake, amount);
+        public void Shake(float amount)
+        {
+            if (!TankBattle.Core.SettingsManager.CameraShakeOn) return;
+            _shake = Mathf.Max(_shake, amount);
+        }
 
         /// <summary>Shake scaled by how close the source is to the camera.</summary>
         public void ShakeAt(Vector3 worldPos, float amount)
