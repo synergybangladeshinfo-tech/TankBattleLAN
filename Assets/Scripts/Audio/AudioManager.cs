@@ -49,7 +49,8 @@ namespace TankBattle.Audio
             _musicSource = gameObject.AddComponent<AudioSource>();
             _musicSource.loop = true;
             _musicSource.playOnAwake = false;
-            _musicSource.volume = 0.28f;   // sits under the effects
+            _musicBase = 0.28f;   // sits under the effects
+            ApplyMusicVolume();
             _musicSource.spatialBlend = 0f;
 
             _uiSource = gameObject.AddComponent<AudioSource>();
@@ -83,9 +84,21 @@ namespace TankBattle.Audio
             }
         }
 
+        /// <summary>Base loudness of the current track before the user slider.</summary>
+        float _musicBase = 0.28f;
+
+        void ApplyMusicVolume()
+        {
+            if (_musicSource == null) return;
+            // The slider defaults to 0.55, which must reproduce the old volume
+            // exactly - so it scales the base level rather than replacing it.
+            _musicSource.volume = _musicBase * (SettingsManager.MusicVolume / 0.55f);
+        }
+
         void ApplySettings()
         {
             _musicSource.mute = !SettingsManager.MusicOn;
+            ApplyMusicVolume();
         }
 
         // ------------------------------------------------------------------ play
@@ -102,7 +115,8 @@ namespace TankBattle.Audio
             // are quiet by design, so each gets its own level.
             bool real = clip == _menuMusic ? _menuIsReal
                       : clip == _battleMusic ? _battleIsReal : false;
-            _musicSource.volume = real ? 0.42f : 0.28f;
+            _musicBase = real ? 0.42f : 0.28f;
+            ApplyMusicVolume();
 
             _musicSource.clip = clip;
             _musicSource.Play();
@@ -144,7 +158,7 @@ namespace TankBattle.Audio
             src.clip = _whiz;
             src.pitch = Random.Range(0.9f, 1.2f);
             src.panStereo = pan;
-            src.volume = 0.55f;
+            src.volume = 0.55f * SettingsManager.SfxVolume;
             src.Play();
         }
         public void PlayExplosionAt(Vector3 pos) => PlayWorld(_explosion, pos, 1.0f, Random.Range(0.9f, 1.05f));
@@ -153,7 +167,7 @@ namespace TankBattle.Audio
         void PlayUi(AudioClip clip, float volume)
         {
             if (!SettingsManager.SfxOn || clip == null) return;
-            _uiSource.PlayOneShot(clip, volume);
+            _uiSource.PlayOneShot(clip, volume * SettingsManager.SfxVolume);
         }
 
         /// <summary>
@@ -164,6 +178,7 @@ namespace TankBattle.Audio
         void PlayWorld(AudioClip clip, Vector3 pos, float volume, float pitch = 1f)
         {
             if (!SettingsManager.SfxOn || clip == null || _sfxPool == null) return;
+            volume *= SettingsManager.SfxVolume;
 
             var cam = Camera.main;
             float attenuation = 1f;
