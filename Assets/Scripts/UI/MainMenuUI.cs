@@ -37,6 +37,8 @@ namespace TankBattle.UI
         readonly List<Button> _styleButtons = new List<Button>();
         readonly List<Button> _patternButtons = new List<Button>();
         Text _garageStats;
+        Text _rankText;
+        ControlEditor _controlEditor;
         float _nextHostListRefresh;
 
         // Live 3D tank preview (Garage): rendered into a texture by its own rig.
@@ -165,10 +167,54 @@ namespace TankBattle.UI
                     RefreshPreviewTank();
                     Show(_garagePanel);
                 });
+            UIFactory.CreateButton(_homePanel, "Controls", "CONTROLS", new Vector2(520, 90),
+                new Color(0.20f, 0.70f, 0.70f, 1f), OpenControlEditor);
             UIFactory.CreateButton(_homePanel, "Settings", "SETTINGS", new Vector2(520, 90),
                 UIFactory.PanelLight, () => Show(_settingsPanel));
             UIFactory.CreateButton(_homePanel, "Quit", "QUIT", new Vector2(520, 90),
                 UIFactory.PanelLight, Application.Quit);
+
+            // Rank strip along the bottom of the home screen.
+            _rankText = UIFactory.CreateText(_canvas.transform, "Rank", "", 30, UIFactory.Accent);
+            _rankText.fontStyle = FontStyle.Bold;
+            UIFactory.SetAnchoredPos(_rankText, new Vector2(0.5f, 0f), new Vector2(0, 100));
+            RefreshRank();
+
+            // A saved choice can be above the current level after a reinstall -
+            // fall back to something this player has actually unlocked.
+            if (!PlayerProgress.IsStyleUnlocked(GameSession.TankStyleIndex))
+            {
+                GameSession.TankStyleIndex = 0;
+                SettingsManager.SavedTankStyle = 0;
+            }
+            if (!PlayerProgress.IsPatternUnlocked(GameSession.TankPatternIndex))
+            {
+                GameSession.TankPatternIndex = 0;
+                SettingsManager.SavedTankPattern = 0;
+            }
+        }
+
+        /// <summary>Current rank / level / XP-to-next line.</summary>
+        void RefreshRank()
+        {
+            if (_rankText == null) return;
+            _rankText.text = PlayerProgress.Level >= PlayerProgress.MaxLevel
+                ? $"{PlayerProgress.Rank}   ·   LV {PlayerProgress.Level}   ·   MAX"
+                : $"{PlayerProgress.Rank}   ·   LV {PlayerProgress.Level}   ·   " +
+                  $"{PlayerProgress.XpToNextLevel} XP to next";
+        }
+
+        /// <summary>Opens the full-screen control customiser on its own canvas.</summary>
+        void OpenControlEditor()
+        {
+            if (_controlEditor != null) return;
+            var editorCanvas = UIFactory.CreateCanvas("ControlEditorCanvas", 50);
+            editorCanvas.transform.SetParent(transform, false);
+            _controlEditor = ControlEditor.Build(editorCanvas.transform, () =>
+            {
+                _controlEditor = null;
+                Destroy(editorCanvas.gameObject);
+            });
         }
 
         // ---- Garage: tank color + body style ----
@@ -256,6 +302,11 @@ namespace TankBattle.UI
                     GameConstants.TankStyleNames[i], new Vector2(258, 84),
                     UIFactory.PanelLight, () =>
                     {
+                        if (!PlayerProgress.IsStyleUnlocked(index))
+                        {
+                            ShowNotice($"Unlocks at level {PlayerProgress.StyleLevel(index)}");
+                            return;
+                        }
                         GameSession.TankStyleIndex = index;
                         SettingsManager.SavedTankStyle = index;
                         HighlightGarage();
@@ -285,6 +336,12 @@ namespace TankBattle.UI
                     GameConstants.TankPatternNames[i], new Vector2(190, 76),
                     UIFactory.PanelLight, () =>
                     {
+                        // Locked patterns tell you the level instead of applying.
+                        if (!PlayerProgress.IsPatternUnlocked(index))
+                        {
+                            ShowNotice($"Unlocks at level {PlayerProgress.PatternLevel(index)}");
+                            return;
+                        }
                         GameSession.TankPatternIndex = index;
                         SettingsManager.SavedTankPattern = index;
                         HighlightGarage();
@@ -389,6 +446,28 @@ namespace TankBattle.UI
             }
         }
 
+        /// <summary>Replace the text of a button built by UIFactory.</summary>
+        static void SetButtonLabel(Button button, string text)
+        {
+            if (button == null) return;
+            var label = button.GetComponentInChildren<Text>();
+            if (label != null) label.text = text;
+        }
+
+        /// <summary>Brief message on the red notice line at the bottom.</summary>
+        void ShowNotice(string message)
+        {
+            if (_noticeText == null) return;
+            _noticeText.text = message;
+            CancelInvoke(nameof(ClearNotice));
+            Invoke(nameof(ClearNotice), 2.5f);
+        }
+
+        void ClearNotice()
+        {
+            if (_noticeText != null) _noticeText.text = "";
+        }
+
         void HighlightGarage()
         {
             for (int i = 0; i < _colorButtons.Count; i++)
@@ -400,12 +479,28 @@ namespace TankBattle.UI
                 outline.effectDistance = new Vector2(5, 5);
                 outline.enabled = sel;
             }
+            // Styles / patterns: selected = accent, locked = dimmed with the
+            // required level shown on the label.
             for (int i = 0; i < _styleButtons.Count; i++)
-                _styleButtons[i].GetComponent<Image>().color =
-                    i == GameSession.TankStyleIndex ? UIFactory.Accent : UIFactory.PanelLight;
+            {
+                bool unlocked = PlayerProgress.IsStyleUnlocked(i);
+                _styleButtons[i].GetComponent<Image>().color = !unlocked
+                    ? new Color(0.10f, 0.12f, 0.16f, 1f)
+                    : (i == GameSession.TankStyleIndex ? UIFactory.Accent : UIFactory.PanelLight);
+                SetButtonLabel(_styleButtons[i], unlocked
+                    ? GameConstants.TankStyleNames[i]
+                    : $"{GameConstants.TankStyleNames[i]}\nLV {PlayerProgress.StyleLevel(i)}");
+            }
             for (int i = 0; i < _patternButtons.Count; i++)
-                _patternButtons[i].GetComponent<Image>().color =
-                    i == GameSession.TankPatternIndex ? UIFactory.Accent : UIFactory.PanelLight;
+            {
+                bool unlocked = PlayerProgress.IsPatternUnlocked(i);
+                _patternButtons[i].GetComponent<Image>().color = !unlocked
+                    ? new Color(0.10f, 0.12f, 0.16f, 1f)
+                    : (i == GameSession.TankPatternIndex ? UIFactory.Accent : UIFactory.PanelLight);
+                SetButtonLabel(_patternButtons[i], unlocked
+                    ? GameConstants.TankPatternNames[i]
+                    : $"{GameConstants.TankPatternNames[i]}\nLV {PlayerProgress.PatternLevel(i)}");
+            }
 
             if (_garageStats != null)
             {
@@ -704,6 +799,13 @@ namespace TankBattle.UI
             _joinPanel.gameObject.SetActive(panel == _joinPanel);
             _lobbyPanel.gameObject.SetActive(panel == _lobbyPanel);
             _settingsPanel.gameObject.SetActive(panel == _settingsPanel);
+
+            // The rank strip belongs to the home screen only.
+            if (_rankText != null)
+            {
+                _rankText.gameObject.SetActive(panel == _homePanel);
+                if (panel == _homePanel) RefreshRank();
+            }
         }
     }
 }

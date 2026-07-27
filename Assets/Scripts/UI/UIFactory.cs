@@ -291,6 +291,73 @@ namespace TankBattle.UI
             return toggle;
         }
 
+        /// <summary>
+        /// Horizontal slider with a label that shows the live value. Used by the
+        /// control editor (size / opacity / sensitivity).
+        /// </summary>
+        public static Slider CreateSlider(Transform parent, string name, string label,
+            float min, float max, float value, System.Action<float> onChanged,
+            Vector2? size = null, string format = "0.00")
+        {
+            var holder = new GameObject(name, typeof(RectTransform));
+            holder.transform.SetParent(parent, false);
+            var hrt = (RectTransform)holder.transform;
+            hrt.sizeDelta = size ?? new Vector2(600, 86);
+
+            var caption = CreateText(holder.transform, "Caption", label, 26, TextDim,
+                TextAnchor.UpperLeft);
+            var crt = (RectTransform)caption.transform;
+            crt.anchorMin = new Vector2(0f, 1f); crt.anchorMax = new Vector2(1f, 1f);
+            crt.pivot = new Vector2(0.5f, 1f);
+            crt.sizeDelta = new Vector2(0, 30);
+            crt.anchoredPosition = Vector2.zero;
+
+            var sliderGo = new GameObject("Slider", typeof(RectTransform), typeof(Slider));
+            sliderGo.transform.SetParent(holder.transform, false);
+            var srt = (RectTransform)sliderGo.transform;
+            srt.anchorMin = new Vector2(0f, 0f); srt.anchorMax = new Vector2(1f, 0f);
+            srt.pivot = new Vector2(0.5f, 0f);
+            srt.sizeDelta = new Vector2(0, 44);
+            srt.anchoredPosition = new Vector2(0, 6);
+
+            // Track.
+            var bg = CreatePanel(sliderGo.transform, "Background", PanelLight,
+                new Vector2(0f, 0.5f), new Vector2(1f, 0.5f),
+                new Vector2(0, -10), new Vector2(0, 10));
+            // Fill.
+            var fillArea = CreatePanel(sliderGo.transform, "FillArea", new Color(0, 0, 0, 0),
+                new Vector2(0f, 0.5f), new Vector2(1f, 0.5f),
+                new Vector2(0, -10), new Vector2(0, 10));
+            var fill = CreatePanel(fillArea, "Fill", Accent,
+                Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            // Handle.
+            var handleArea = CreatePanel(sliderGo.transform, "HandleArea", new Color(0, 0, 0, 0),
+                Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            var handle = CreatePanel(handleArea, "Handle", TextColor,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            handle.sizeDelta = new Vector2(36, 44);
+            handle.GetComponent<Image>().sprite = CircleSprite;
+
+            var slider = sliderGo.GetComponent<Slider>();
+            slider.fillRect = fill;
+            slider.handleRect = handle;
+            slider.targetGraphic = handle.GetComponent<Image>();
+            slider.direction = Slider.Direction.LeftToRight;
+            slider.minValue = min;
+            slider.maxValue = max;
+            slider.wholeNumbers = false;
+            slider.value = Mathf.Clamp(value, min, max);
+            _ = bg;
+
+            caption.text = $"{label}   {slider.value.ToString(format)}";
+            slider.onValueChanged.AddListener(v =>
+            {
+                caption.text = $"{label}   {v.ToString(format)}";
+                onChanged?.Invoke(v);
+            });
+            return slider;
+        }
+
         /// <summary>Vertical layout group helper for stacking widgets.</summary>
         public static VerticalLayoutGroup AddVerticalLayout(RectTransform rt, float spacing,
             RectOffset padding = null, TextAnchor align = TextAnchor.UpperCenter)

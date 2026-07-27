@@ -23,15 +23,26 @@ namespace TankBattle.UI
         public VirtualJoystick Joystick { get; private set; }
         public VirtualJoystick AimJoystick { get; private set; }
         public FireButton FireButton { get; private set; }
+        public FireButton HoverButton { get; private set; }
+
+        /// <summary>Kill feed / streak banner (server pushes messages into it).</summary>
+        public KillFeed Feed { get; private set; }
 
         bool _dashQueued, _grenadeQueued;
 
         /// <summary>Right aim-stick direction (camera-relative), for the turret.</summary>
         public Vector2 AimDirection => AimJoystick != null ? AimJoystick.Direction : Vector2.zero;
 
-        /// <summary>Fire is held while aiming (auto-fire) or the FIRE button is down.</summary>
+        /// <summary>
+        /// Fire is held while the FIRE button is down, or - when the player has
+        /// auto-fire enabled in the control settings - simply while aiming.
+        /// </summary>
         public bool FireHeld =>
-            AimDirection.sqrMagnitude > 0.04f || (FireButton != null && FireButton.IsPressed);
+            (FireButton != null && FireButton.IsPressed) ||
+            (ControlLayout.AutoFire && AimDirection.sqrMagnitude > 0.04f);
+
+        /// <summary>True while the HOVER button is held (jetpack lift).</summary>
+        public bool HoverHeld => HoverButton != null && HoverButton.IsPressed;
 
         /// <summary>One-shot dash request (consumed by TankController).</summary>
         public bool ConsumeDash() { if (_dashQueued) { _dashQueued = false; return true; } return false; }
@@ -41,9 +52,11 @@ namespace TankBattle.UI
 
         Canvas _canvas;
         Image _healthFill;
+        Image _hoverFuelFill;
         Text _timerText, _modeText, _killsText, _respawnText, _weaponText;
         RectTransform _scoreboardPanel, _pausePanel, _winPanel, _settingsPanel;
-        Text _scoreboardText, _winTitle, _winBoard;
+        RectTransform _hoverFuelBar;
+        Text _scoreboardText, _winTitle, _winBoard, _xpText;
         float _respawnUntil;
         bool _winShown;
         int _lastTickSecond = -1;
@@ -81,6 +94,11 @@ namespace TankBattle.UI
             BuildControls();
             BuildTargeting();
             BuildStatusBar();
+
+            // Minimap (top-right) with the kill feed stacked underneath it.
+            Minimap.Build(_canvas.transform, 250f);
+            Feed = KillFeed.Build(_canvas.transform, 380f);
+
             BuildScoreboard();
             BuildPauseMenu();
             BuildWinScreen();
@@ -141,6 +159,16 @@ namespace TankBattle.UI
                     : (left > 0f
                         ? $"DESTROYED\nRespawning in {Mathf.CeilToInt(left)}..."
                         : "Respawning...");
+            }
+
+            // Hover fuel bar (hidden until the tank actually has a jetpack read).
+            if (_hoverFuelFill != null && _localTank != null)
+            {
+                float fuel = _localTank.HoverFuel01;
+                _hoverFuelFill.fillAmount = fuel;
+                _hoverFuelFill.color = fuel < 0.25f
+                    ? new Color(1f, 0.35f, 0.25f, 0.95f)
+                    : new Color(0.95f, 0.75f, 0.2f, 0.95f);
             }
 
             // Lock-on target marker follows the enemy the turret is tracking.
@@ -226,110 +254,164 @@ namespace TankBattle.UI
 
         // ---------------------------------------------------------------- pieces
 
+        /// <summary>
+        /// Places every control exactly where the player's saved layout says
+        /// (see ControlLayout / the CONTROLS editor). All controls are anchored
+        /// to the canvas bottom-left corner with a centred pivot, so a stored
+        /// position is simply "the centre of this control in 1920x1080 space".
+        /// </summary>
+        void PlaceControl(Component c, ControlId id)
+        {
+            var rt = (RectTransform)c.transform;
+            rt.anchorMin = rt.anchorMax = new Vector2(0f, 0f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            float size = ControlLayout.SizeOf(id);
+            rt.sizeDelta = new Vector2(size, size);
+            rt.anchoredPosition = ControlLayout.GetPos(id);
+        }
+
         void BuildControls()
         {
-            // --- Joystick (bottom-left, floating) ---
+            float op = ControlLayout.Opacity;
+
+            // --- Movement joystick (floating: re-centres under your thumb) ---
             var joyGo = new GameObject("Joystick", typeof(RectTransform), typeof(Image),
                                        typeof(VirtualJoystick));
             joyGo.transform.SetParent(_canvas.transform, false);
             var joyBg = joyGo.GetComponent<Image>();
             joyBg.sprite = UIFactory.CircleSprite;
-            joyBg.color = new Color(1f, 1f, 1f, 0.15f);
+            joyBg.color = new Color(1f, 1f, 1f, 0.25f * op);
+            joyBg.raycastTarget = false;              // the pad below handles input
+            PlaceControl(joyBg, ControlId.MoveStick);
             var joyRt = (RectTransform)joyGo.transform;
-            joyRt.sizeDelta = new Vector2(280, 280);
-            UIFactory.SetAnchoredPos(joyBg, new Vector2(0f, 0f), new Vector2(90, 70));
 
             var handleGo = new GameObject("Handle", typeof(Image));
             handleGo.transform.SetParent(joyGo.transform, false);
             var handleImg = handleGo.GetComponent<Image>();
             handleImg.sprite = UIFactory.CircleSprite;
-            handleImg.color = new Color(1f, 1f, 1f, 0.45f);
+            handleImg.color = new Color(1f, 1f, 1f, 0.75f * op);
             handleImg.raycastTarget = false;
-            ((RectTransform)handleGo.transform).sizeDelta = new Vector2(120, 120);
+            ((RectTransform)handleGo.transform).sizeDelta =
+                new Vector2(joyRt.sizeDelta.x * 0.43f, joyRt.sizeDelta.y * 0.43f);
 
             Joystick = joyGo.GetComponent<VirtualJoystick>();
             Joystick.Init(joyRt, (RectTransform)handleGo.transform);
 
-            // Big invisible touch pad so the floating stick catches presses
-            // anywhere in the lower-left quadrant.
-            var padGo = new GameObject("JoystickPad", typeof(RectTransform), typeof(Image));
-            padGo.transform.SetParent(_canvas.transform, false);
-            var padImg = padGo.GetComponent<Image>();
-            padImg.color = new Color(0f, 0f, 0f, 0f);   // invisible but raycastable
-            var padRt = (RectTransform)padGo.transform;
-            padRt.anchorMin = Vector2.zero;
-            padRt.anchorMax = new Vector2(0.42f, 0.55f);
-            padRt.offsetMin = Vector2.zero;
-            padRt.offsetMax = Vector2.zero;
-            // Forward pad events to the joystick.
-            var fwd = padGo.AddComponent<JoystickPadForwarder>();
-            fwd.Target = Joystick;
-            joyBg.raycastTarget = false; // the pad handles all input
-
-            // --- AIM joystick (bottom-right, floating) - rotates the turret ---
+            // --- Aim joystick (rotates the turret) ---
             var aimGo = new GameObject("AimJoystick", typeof(RectTransform), typeof(Image),
                                        typeof(VirtualJoystick));
             aimGo.transform.SetParent(_canvas.transform, false);
             var aimBg = aimGo.GetComponent<Image>();
             aimBg.sprite = UIFactory.CircleSprite;
-            aimBg.color = new Color(1f, 0.4f, 0.35f, 0.16f);
+            aimBg.color = new Color(1f, 0.45f, 0.4f, 0.26f * op);
             aimBg.raycastTarget = false;
+            PlaceControl(aimBg, ControlId.AimStick);
             var aimRt = (RectTransform)aimGo.transform;
-            aimRt.sizeDelta = new Vector2(280, 280);
-            UIFactory.SetAnchoredPos(aimBg, new Vector2(1f, 0f), new Vector2(-90, 70));
 
             var aimHandleGo = new GameObject("Handle", typeof(Image));
             aimHandleGo.transform.SetParent(aimGo.transform, false);
             var aimHandle = aimHandleGo.GetComponent<Image>();
             aimHandle.sprite = UIFactory.CircleSprite;
-            aimHandle.color = new Color(1f, 0.55f, 0.5f, 0.5f);
+            aimHandle.color = new Color(1f, 0.6f, 0.55f, 0.8f * op);
             aimHandle.raycastTarget = false;
-            ((RectTransform)aimHandleGo.transform).sizeDelta = new Vector2(120, 120);
+            ((RectTransform)aimHandleGo.transform).sizeDelta =
+                new Vector2(aimRt.sizeDelta.x * 0.43f, aimRt.sizeDelta.y * 0.43f);
 
             AimJoystick = aimGo.GetComponent<VirtualJoystick>();
             AimJoystick.Init(aimRt, (RectTransform)aimHandleGo.transform);
 
-            var aimPadGo = new GameObject("AimPad", typeof(RectTransform), typeof(Image));
-            aimPadGo.transform.SetParent(_canvas.transform, false);
-            aimPadGo.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0f);
-            var aimPadRt = (RectTransform)aimPadGo.transform;
-            aimPadRt.anchorMin = new Vector2(0.58f, 0f);
-            aimPadRt.anchorMax = new Vector2(1f, 0.5f);
-            aimPadRt.offsetMin = Vector2.zero; aimPadRt.offsetMax = Vector2.zero;
-            aimPadGo.AddComponent<JoystickPadForwarder>().Target = AimJoystick;
+            // Invisible touch pads: whichever stick sits further left owns the
+            // left half of the screen, so a mirrored/custom layout still works.
+            bool moveOnLeft = ControlLayout.GetPos(ControlId.MoveStick).x <=
+                              ControlLayout.GetPos(ControlId.AimStick).x;
+            CreateStickPad("JoystickPad", moveOnLeft, Joystick);
+            CreateStickPad("AimPad", !moveOnLeft, AimJoystick);
 
-            var aimLabel = UIFactory.CreateText(_canvas.transform, "AimLabel", "AIM", 26, UIFactory.TextDim);
-            UIFactory.SetAnchoredPos(aimLabel, new Vector2(1f, 0f), new Vector2(-90, 230));
-
-            // --- Action buttons (bottom-centre, between the two sticks) ---
+            // --- FIRE (hold) ---
             var fireGo = new GameObject("FireButton", typeof(RectTransform), typeof(Image),
                                         typeof(FireButton));
             fireGo.transform.SetParent(_canvas.transform, false);
             var fireImg = fireGo.GetComponent<Image>();
             fireImg.sprite = UIFactory.CircleSprite;
-            fireImg.color = new Color(1f, 0.30f, 0.25f, 0.6f);
-            ((RectTransform)fireGo.transform).sizeDelta = new Vector2(150, 150);
-            UIFactory.SetAnchoredPos(fireImg, new Vector2(0.5f, 0f), new Vector2(-170, 120));
-            var fireLabel = UIFactory.CreateText(fireGo.transform, "Label", "FIRE", 30, UIFactory.TextColor);
+            fireImg.color = new Color(1f, 0.30f, 0.25f, op);
+            PlaceControl(fireImg, ControlId.Fire);
+            var fireLabel = UIFactory.CreateText(fireGo.transform, "Label", "FIRE", 30,
+                UIFactory.TextColor);
             fireLabel.fontStyle = FontStyle.Bold;
             UIFactory.Stretch((RectTransform)fireLabel.transform);
             FireButton = fireGo.GetComponent<FireButton>();
 
+            // --- DASH (tap) ---
             var dashBtn = UIFactory.CreateButton(_canvas.transform, "Dash", "DASH",
-                new Vector2(140, 140), new Color(0.25f, 0.6f, 1f, 0.6f), () => _dashQueued = true, 26);
-            var dashImg = dashBtn.GetComponent<Image>(); dashImg.sprite = UIFactory.CircleSprite;
-            UIFactory.SetAnchoredPos(dashBtn, new Vector2(0.5f, 0f), new Vector2(0, 120));
+                Vector2.one * ControlLayout.SizeOf(ControlId.Dash),
+                new Color(0.25f, 0.6f, 1f, op), () => _dashQueued = true, 26);
+            dashBtn.GetComponent<Image>().sprite = UIFactory.CircleSprite;
+            PlaceControl(dashBtn, ControlId.Dash);
 
+            // --- BOMB (tap) ---
             var grenBtn = UIFactory.CreateButton(_canvas.transform, "Grenade", "BOMB",
-                new Vector2(140, 140), new Color(0.35f, 0.8f, 0.35f, 0.6f), () => _grenadeQueued = true, 26);
-            var grenImg = grenBtn.GetComponent<Image>(); grenImg.sprite = UIFactory.CircleSprite;
-            UIFactory.SetAnchoredPos(grenBtn, new Vector2(0.5f, 0f), new Vector2(165, 120));
+                Vector2.one * ControlLayout.SizeOf(ControlId.Bomb),
+                new Color(0.35f, 0.8f, 0.35f, op), () => _grenadeQueued = true, 26);
+            grenBtn.GetComponent<Image>().sprite = UIFactory.CircleSprite;
+            PlaceControl(grenBtn, ControlId.Bomb);
+
+            // --- HOVER (hold to rise, jetpack style) ---
+            var hoverGo = new GameObject("HoverButton", typeof(RectTransform), typeof(Image),
+                                         typeof(FireButton));
+            hoverGo.transform.SetParent(_canvas.transform, false);
+            var hoverImg = hoverGo.GetComponent<Image>();
+            hoverImg.sprite = UIFactory.CircleSprite;
+            hoverImg.color = new Color(0.95f, 0.75f, 0.2f, op);
+            PlaceControl(hoverImg, ControlId.Hover);
+            var hoverLabel = UIFactory.CreateText(hoverGo.transform, "Label", "HOVER", 24,
+                UIFactory.TextColor);
+            hoverLabel.fontStyle = FontStyle.Bold;
+            UIFactory.Stretch((RectTransform)hoverLabel.transform);
+            HoverButton = hoverGo.GetComponent<FireButton>();
+
+            // Fuel bar hugging the hover button.
+            _hoverFuelBar = UIFactory.CreatePanel(_canvas.transform, "HoverFuelBack",
+                new Color(0f, 0f, 0f, 0.55f), new Vector2(0f, 0f), new Vector2(0f, 0f),
+                Vector2.zero, Vector2.zero);
+            _hoverFuelBar.pivot = new Vector2(0.5f, 0.5f);
+            _hoverFuelBar.sizeDelta = new Vector2(ControlLayout.SizeOf(ControlId.Hover), 14f);
+            _hoverFuelBar.anchoredPosition = ControlLayout.GetPos(ControlId.Hover) +
+                new Vector2(0f, ControlLayout.SizeOf(ControlId.Hover) * 0.5f + 14f);
+
+            var fuelFill = UIFactory.CreatePanel(_hoverFuelBar, "Fill",
+                new Color(0.95f, 0.75f, 0.2f, 0.95f), Vector2.zero, Vector2.one,
+                new Vector2(2, 2), new Vector2(-2, -2));
+            _hoverFuelFill = fuelFill.GetComponent<Image>();
+            _hoverFuelFill.type = Image.Type.Filled;
+            _hoverFuelFill.fillMethod = Image.FillMethod.Horizontal;
 
             // --- Current weapon readout (above the aim stick) ---
             _weaponText = UIFactory.CreateText(_canvas.transform, "Weapon", "CANNON", 34,
                 UIFactory.TextColor);
             _weaponText.fontStyle = FontStyle.Bold;
-            UIFactory.SetAnchoredPos(_weaponText, new Vector2(1f, 0f), new Vector2(-215, 350));
+            var wrt = (RectTransform)_weaponText.transform;
+            wrt.anchorMin = wrt.anchorMax = new Vector2(0f, 0f);
+            wrt.pivot = new Vector2(0.5f, 0.5f);
+            wrt.anchoredPosition = ControlLayout.GetPos(ControlId.AimStick) +
+                new Vector2(0f, ControlLayout.SizeOf(ControlId.AimStick) * 0.5f + 40f);
+        }
+
+        /// <summary>
+        /// Big invisible half-screen pad that hands every press in its half to
+        /// the floating stick, so you never have to hit the circle exactly.
+        /// </summary>
+        void CreateStickPad(string name, bool leftHalf, VirtualJoystick target)
+        {
+            var padGo = new GameObject(name, typeof(RectTransform), typeof(Image));
+            padGo.transform.SetParent(_canvas.transform, false);
+            padGo.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0f); // invisible, raycastable
+            var rt = (RectTransform)padGo.transform;
+            rt.anchorMin = leftHalf ? new Vector2(0f, 0f) : new Vector2(0.5f, 0f);
+            rt.anchorMax = leftHalf ? new Vector2(0.5f, 0.62f) : new Vector2(1f, 0.62f);
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+            padGo.AddComponent<JoystickPadForwarder>().Target = target;
+            padGo.transform.SetAsFirstSibling(); // never steal taps from real buttons
         }
 
         void BuildStatusBar()
@@ -429,9 +511,14 @@ namespace TankBattle.UI
             _winTitle.fontStyle = FontStyle.Bold;
             ((RectTransform)_winTitle.transform).sizeDelta = new Vector2(760, 120);
 
+            // XP / rank line: filled in when the match ends.
+            _xpText = UIFactory.CreateText(box, "Xp", "", 30, UIFactory.AccentGreen);
+            _xpText.fontStyle = FontStyle.Bold;
+            ((RectTransform)_xpText.transform).sizeDelta = new Vector2(760, 76);
+
             _winBoard = UIFactory.CreateText(box, "Board", "", 26, UIFactory.TextColor,
                 TextAnchor.UpperCenter);
-            ((RectTransform)_winBoard.transform).sizeDelta = new Vector2(760, 320);
+            ((RectTransform)_winBoard.transform).sizeDelta = new Vector2(760, 280);
 
             // Host can pull everyone back to the lobby for a rematch;
             // anyone can leave on their own.
@@ -484,8 +571,31 @@ namespace TankBattle.UI
             _winShown = true;
             var match = MatchManager.Instance;
 
-            _winTitle.text = match.GetWinnerTitle(NetworkManager.Singleton.LocalClientId);
+            ulong localId = NetworkManager.Singleton.LocalClientId;
+            _winTitle.text = match.GetWinnerTitle(localId);
             _winBoard.text = BuildScoreboardString();
+
+            // Award XP for this match and celebrate any level-up.
+            if (_xpText != null)
+            {
+                var entry = match.GetLocalEntry();
+                bool won = match.GetWinner().ClientId == localId;
+                int levelsGained = PlayerProgress.AwardMatch(entry.Kills, won, out int gained);
+
+                string line = $"+{gained} XP    ·    {PlayerProgress.Rank}  LV {PlayerProgress.Level}";
+                if (levelsGained > 0)
+                {
+                    line = $"LEVEL UP!   LV {PlayerProgress.Level}  {PlayerProgress.Rank}\n+{gained} XP";
+                    _xpText.color = UIFactory.AccentGreen;
+                }
+                else
+                {
+                    line += PlayerProgress.Level >= PlayerProgress.MaxLevel
+                        ? "" : $"    ·    {PlayerProgress.XpToNextLevel} XP to next";
+                    _xpText.color = UIFactory.TextColor;
+                }
+                _xpText.text = line;
+            }
 
             // Only the host can drag everyone back to the lobby.
             foreach (var b in _winPanel.GetComponentsInChildren<Button>(true))

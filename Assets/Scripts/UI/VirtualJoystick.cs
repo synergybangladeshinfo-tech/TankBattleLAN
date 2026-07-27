@@ -56,17 +56,16 @@ namespace TankBattle.UI
             // local is relative to the parent's pivot; re-base to bottom-left.
             Vector2 fromCorner = local + Vector2.Scale(parent.rect.size, parent.pivot);
 
-            // Bottom-left corner of the stick so that its centre is under the
-            // finger, clamped to the lower-left region of the screen.
-            Vector2 corner = fromCorner - _background.rect.size * 0.5f;
-            corner.x = Mathf.Clamp(corner.x, 0f,
-                parent.rect.size.x * 0.45f - _background.rect.size.x);
-            corner.y = Mathf.Clamp(corner.y, 0f,
-                parent.rect.size.y * 0.60f - _background.rect.size.y);
+            // Put the stick's CENTRE under the finger, clamped so the whole
+            // circle stays on screen. (The stick is anchored to the canvas
+            // bottom-left with a centred pivot - see HUDController.PlaceControl -
+            // so anchoredPosition is simply its centre.)
+            Vector2 half = _background.rect.size * 0.5f;
+            Vector2 centre = fromCorner;
+            centre.x = Mathf.Clamp(centre.x, half.x, parent.rect.size.x - half.x);
+            centre.y = Mathf.Clamp(centre.y, half.y, parent.rect.size.y - half.y);
 
-            // pivot offset -> anchoredPosition (anchor is the bottom-left corner).
-            _background.anchoredPosition = corner +
-                Vector2.Scale(_background.rect.size, _background.pivot);
+            _background.anchoredPosition = centre;
             OnDrag(e);
         }
 
