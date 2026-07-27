@@ -32,6 +32,7 @@ namespace TankBattle.EditorTools
             public string SceneName, DisplayName;
             public MapTheme Theme;
             public Color Ground, Wall, Obstacle, Sky, Ambient;
+            public GameConstants.Weather Weather;
             public System.Action<MapDef> BuildObstacles;
         }
 
@@ -72,6 +73,7 @@ namespace TankBattle.EditorTools
                 new MapDef
                 {
                     SceneName = "Map01_Arena", DisplayName = "Open Arena", Theme = MapTheme.Desert,
+                    Weather = GameConstants.Weather.DustStorm,
                     Ground = new Color(0.76f, 0.70f, 0.50f), Wall = new Color(0.45f, 0.36f, 0.26f),
                     Obstacle = new Color(0.55f, 0.45f, 0.30f), Sky = new Color(0.55f, 0.75f, 0.95f),
                     Ambient = new Color(0.55f, 0.55f, 0.55f),
@@ -87,6 +89,7 @@ namespace TankBattle.EditorTools
                 new MapDef
                 {
                     SceneName = "Map02_Crossfire", DisplayName = "Crossfire", Theme = MapTheme.Urban,
+                    Weather = GameConstants.Weather.Night,
                     Ground = new Color(0.45f, 0.52f, 0.58f), Wall = new Color(0.25f, 0.30f, 0.36f),
                     Obstacle = new Color(0.32f, 0.40f, 0.50f), Sky = new Color(0.65f, 0.60f, 0.55f),
                     Ambient = new Color(0.50f, 0.50f, 0.55f),
@@ -108,6 +111,7 @@ namespace TankBattle.EditorTools
                 new MapDef
                 {
                     SceneName = "Map03_Maze", DisplayName = "The Maze", Theme = MapTheme.Forest,
+                    Weather = GameConstants.Weather.Rain,
                     Ground = new Color(0.40f, 0.55f, 0.35f), Wall = new Color(0.28f, 0.35f, 0.25f),
                     Obstacle = new Color(0.36f, 0.44f, 0.30f), Sky = new Color(0.60f, 0.80f, 0.70f),
                     Ambient = new Color(0.50f, 0.55f, 0.50f),
@@ -127,6 +131,7 @@ namespace TankBattle.EditorTools
                 new MapDef
                 {
                     SceneName = "Map04_Pillars", DisplayName = "Pillar Field", Theme = MapTheme.Alien,
+                    Weather = GameConstants.Weather.Clear,
                     Ground = new Color(0.35f, 0.33f, 0.40f), Wall = new Color(0.22f, 0.20f, 0.28f),
                     Obstacle = new Color(0.55f, 0.50f, 0.65f), Sky = new Color(0.30f, 0.25f, 0.45f),
                     Ambient = new Color(0.45f, 0.42f, 0.55f),
@@ -145,6 +150,7 @@ namespace TankBattle.EditorTools
                 new MapDef
                 {
                     SceneName = "Map05_Fortress", DisplayName = "Fortress", Theme = MapTheme.Fort,
+                    Weather = GameConstants.Weather.Night,
                     Ground = new Color(0.72f, 0.55f, 0.42f), Wall = new Color(0.48f, 0.32f, 0.24f),
                     Obstacle = new Color(0.58f, 0.42f, 0.30f), Sky = new Color(0.95f, 0.70f, 0.45f),
                     Ambient = new Color(0.60f, 0.50f, 0.45f),
@@ -328,6 +334,7 @@ namespace TankBattle.EditorTools
 
             // Floating dust motes for atmosphere.
             BuildAtmosphere(d);
+            BuildWeather(d);   // night / rain / dust storm per map
 
             // Cinematic post-processing (bloom, colour grade, AO, vignette...).
             PostFXBuilder.ApplyToScene(cam);
@@ -511,15 +518,27 @@ namespace TankBattle.EditorTools
             }
         }
 
+        /// <summary>
+        /// Fuel barrel: cover you can hide behind, until someone shoots it and
+        /// it takes the whole corner with it. These are in-scene NetworkObjects
+        /// so the server decides when one blows and every client agrees.
+        /// </summary>
         static void Barrel(Vector3 p, Material mat)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            go.name = "Barrel";
+            go.name = "ExplosiveBarrel";
             if (_obstacleParent != null) go.transform.SetParent(_obstacleParent, false);
             go.transform.position = new Vector3(p.x, 0.65f, p.z);
             go.transform.localScale = new Vector3(0.9f, 0.65f, 0.9f);
             go.GetComponent<MeshRenderer>().sharedMaterial = mat;
-            go.isStatic = true;
+            // NOT static: it has to be able to disappear at runtime.
+
+            go.AddComponent<NetworkObject>();
+            var d = go.AddComponent<Destructible>();
+            d.maxHealth = GameConstants.BarrelHealth;
+            d.explosive = true;
+            d.blastRadius = GameConstants.BarrelBlastRadius;
+            d.blastDamage = GameConstants.BarrelBlastDamage;
         }
 
         static void Barrier(Vector3 p, Material mat, float yaw)
@@ -749,6 +768,149 @@ namespace TankBattle.EditorTools
         }
 
         /// <summary>Slow floating dust motes drifting through the arena air.</summary>
+        /// <summary>
+        /// Per-map weather and time of day. Each arena gets its own mood so the
+        /// five maps stop feeling like recolours of each other: a dust storm at
+        /// dusk, a rain-soaked forest, two night maps and one clear day.
+        /// Everything here is lighting + particles, so it costs almost nothing.
+        /// </summary>
+        static void BuildWeather(MapDef d)
+        {
+            var sun = Object.FindFirstObjectByType<Light>();
+
+            switch (d.Weather)
+            {
+                case GameConstants.Weather.Night:
+                {
+                    // Cold moonlight, deep blue ambient, tight fog.
+                    if (sun != null)
+                    {
+                        sun.intensity = 0.42f;
+                        sun.color = new Color(0.62f, 0.72f, 1f);
+                        sun.transform.rotation = Quaternion.Euler(28f, 200f, 0f);
+                    }
+                    RenderSettings.ambientSkyColor = new Color(0.10f, 0.13f, 0.22f);
+                    RenderSettings.ambientEquatorColor = new Color(0.07f, 0.09f, 0.16f);
+                    RenderSettings.ambientGroundColor = new Color(0.03f, 0.04f, 0.07f);
+                    RenderSettings.fogColor = new Color(0.05f, 0.07f, 0.12f);
+                    RenderSettings.fogStartDistance = 40f;
+                    RenderSettings.fogEndDistance = 190f;
+
+                    // A few warm lamps so the map is readable, not pitch black.
+                    for (int i = 0; i < 6; i++)
+                    {
+                        float ang = i * 60f * Mathf.Deg2Rad;
+                        var lampGo = new GameObject($"NightLamp_{i}", typeof(Light));
+                        lampGo.transform.position =
+                            new Vector3(Mathf.Cos(ang) * 34f, 9f, Mathf.Sin(ang) * 34f);
+                        var lamp = lampGo.GetComponent<Light>();
+                        lamp.type = LightType.Point;
+                        lamp.range = 42f;
+                        lamp.intensity = 2.4f;
+                        lamp.color = new Color(1f, 0.82f, 0.55f);
+                        lamp.shadows = LightShadows.None;   // cheap on mobile
+                    }
+                    break;
+                }
+
+                case GameConstants.Weather.Rain:
+                {
+                    if (sun != null)
+                    {
+                        sun.intensity = 0.75f;
+                        sun.color = new Color(0.78f, 0.82f, 0.9f);
+                    }
+                    RenderSettings.ambientSkyColor = new Color(0.30f, 0.34f, 0.38f);
+                    RenderSettings.fogColor = new Color(0.42f, 0.46f, 0.50f);
+                    RenderSettings.fogStartDistance = 30f;
+                    RenderSettings.fogEndDistance = 165f;
+                    MakeWeatherParticles("Rain",
+                        colour: new Color(0.72f, 0.82f, 0.95f, 0.55f),
+                        size: new Vector2(0.035f, 0.075f),
+                        lifetime: 1.5f, rate: 950f, downSpeed: 26f,
+                        sideDrift: 1.6f, stretched: true);
+                    break;
+                }
+
+                case GameConstants.Weather.DustStorm:
+                {
+                    if (sun != null)
+                    {
+                        sun.intensity = 1.05f;
+                        sun.color = new Color(1f, 0.80f, 0.55f);   // low orange sun
+                        sun.transform.rotation = Quaternion.Euler(18f, 40f, 0f);
+                    }
+                    RenderSettings.ambientSkyColor = new Color(0.62f, 0.48f, 0.32f);
+                    RenderSettings.ambientEquatorColor = new Color(0.48f, 0.38f, 0.26f);
+                    RenderSettings.fogColor = new Color(0.72f, 0.58f, 0.38f);
+                    RenderSettings.fogStartDistance = 25f;
+                    RenderSettings.fogEndDistance = 150f;   // sand cuts the view down
+                    MakeWeatherParticles("DustStorm",
+                        colour: new Color(0.85f, 0.72f, 0.50f, 0.30f),
+                        size: new Vector2(1.4f, 3.6f),
+                        lifetime: 4.5f, rate: 130f, downSpeed: 1.2f,
+                        sideDrift: 16f, stretched: false);
+                    break;
+                }
+            }
+        }
+
+        /// <summary>One world-space particle volume covering the whole arena.</summary>
+        static void MakeWeatherParticles(string name, Color colour, Vector2 size,
+                                         float lifetime, float rate, float downSpeed,
+                                         float sideDrift, bool stretched)
+        {
+            string path = $"{PrefabBuilder.MaterialDir}/FX_{name}.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null)
+            {
+                mat = new Material(Shader.Find("Legacy Shaders/Particles/Alpha Blended"));
+                AssetDatabase.CreateAsset(mat, path);
+            }
+
+            var go = new GameObject(name, typeof(ParticleSystem));
+            go.transform.position = new Vector3(0f, 26f, 0f);
+            var ps = go.GetComponent<ParticleSystem>();
+
+            var main = ps.main;
+            main.loop = true;
+            main.playOnAwake = true;
+            main.startLifetime = lifetime;
+            main.startSpeed = downSpeed;
+            main.startSize = new ParticleSystem.MinMaxCurve(size.x, size.y);
+            main.startColor = colour;
+            main.maxParticles = 1400;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.gravityModifier = 0f;
+
+            var emission = ps.emission;
+            emission.rateOverTime = rate;
+
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Box;
+            // Cover the whole 140x140 arena from above.
+            shape.scale = new Vector3(ArenaHalf * 2.2f, 2f, ArenaHalf * 2.2f);
+            shape.rotation = new Vector3(90f, 0f, 0f);   // emit downward
+
+            var vel = ps.velocityOverLifetime;
+            vel.enabled = true;
+            vel.space = ParticleSystemSimulationSpace.World;
+            vel.x = new ParticleSystem.MinMaxCurve(-sideDrift, sideDrift);
+            vel.z = new ParticleSystem.MinMaxCurve(-sideDrift * 0.4f, sideDrift * 0.4f);
+
+            var renderer = ps.GetComponent<ParticleSystemRenderer>();
+            renderer.sharedMaterial = mat;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            if (stretched)
+            {
+                // Rain reads much better as streaks than as dots.
+                renderer.renderMode = ParticleSystemRenderMode.Stretch;
+                renderer.velocityScale = 0.12f;
+                renderer.lengthScale = 3.2f;
+            }
+        }
+
         static void BuildAtmosphere(MapDef d)
         {
             string path = $"{PrefabBuilder.MaterialDir}/FX_Motes.mat";
