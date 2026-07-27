@@ -58,6 +58,8 @@ namespace TankBattle.UI
         RectTransform _hoverFuelBar;
         Text _scoreboardText, _winTitle, _winBoard, _xpText, _countdownText;
         RectTransform _chatPanel;
+        Text _reloadText, _hintText;
+        float _hintUntil;
         int _lastCountdownShown = -1;
         float _respawnUntil;
         bool _winShown;
@@ -107,6 +109,8 @@ namespace TankBattle.UI
             BuildRespawnOverlay();
             BuildCountdown();
             BuildQuickChat();
+            BuildReloadIndicator();
+            BuildFirstTimeHints();
 
             AudioManager.Instance?.PlayBattleMusic();
         }
@@ -149,6 +153,21 @@ namespace TankBattle.UI
                     : $"{def.Name}  x{_localShooting.Ammo.Value}";
                 _weaponText.color = def.BulletColor;
             }
+
+            // Reload readout: you cannot fire while this is counting down.
+            if (_reloadText != null && _localShooting != null)
+            {
+                float left = _localShooting.ReloadRemaining;
+                bool reloading = left > 0.01f;
+                if (_reloadText.gameObject.activeSelf != reloading)
+                    _reloadText.gameObject.SetActive(reloading);
+                if (reloading) _reloadText.text = $"RELOADING  {left:0.0}s";
+            }
+
+            // First-match hints fade out on their own.
+            if (_hintText != null && _hintText.gameObject.activeSelf &&
+                Time.time > _hintUntil)
+                _hintText.gameObject.SetActive(false);
 
             // Scoreboard refresh while open.
             if (_scoreboardPanel.gameObject.activeSelf)
@@ -549,6 +568,51 @@ namespace TankBattle.UI
                     }, 24);
             }
             _chatPanel.gameObject.SetActive(false);
+        }
+
+        /// <summary>"RELOADING 1.2s" under the weapon readout.</summary>
+        void BuildReloadIndicator()
+        {
+            _reloadText = UIFactory.CreateText(_canvas.transform, "Reload", "", 30,
+                UIFactory.AccentRed);
+            _reloadText.fontStyle = FontStyle.Bold;
+            var rt = (RectTransform)_reloadText.transform;
+            rt.anchorMin = rt.anchorMax = new Vector2(0f, 0f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = ControlLayout.GetPos(ControlId.AimStick) +
+                new Vector2(0f, ControlLayout.SizeOf(ControlId.AimStick) * 0.5f + 84f);
+            _reloadText.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// One-time coaching for a brand new player: names the three ability
+        /// buttons so nobody has to guess what DASH / BOMB / HOVER do. Shown
+        /// only on the very first match, then never again.
+        /// </summary>
+        void BuildFirstTimeHints()
+        {
+            if (!SettingsManager.ShowFirstTimeHints) return;
+            SettingsManager.ShowFirstTimeHints = false;   // consume it
+
+            _hintText = UIFactory.CreateText(_canvas.transform, "Hints",
+                "DASH = quick boost (and rams enemies)\n" +
+                "BOMB = lobbed grenade\n" +
+                "HOVER = hold to rise over cover\n" +
+                "Right stick aims  ·  CONTROLS in the menu moves every button",
+                28, UIFactory.TextColor);
+            UIFactory.SetAnchoredPos(_hintText, new Vector2(0.5f, 0f), new Vector2(0, 470));
+
+            var bg = UIFactory.CreateRoundedPanel(_canvas.transform, "HintBg",
+                new Color(0f, 0f, 0f, 0.55f), new Vector2(920, 190));
+            bg.anchorMin = bg.anchorMax = bg.pivot = new Vector2(0.5f, 0f);
+            bg.anchoredPosition = new Vector2(0, 385);
+            bg.SetAsFirstSibling();
+            bg.GetComponent<Image>().raycastTarget = false;
+            _hintText.transform.SetAsLastSibling();
+
+            // Keep them up long enough to read, then get out of the way.
+            _hintUntil = Time.time + 11f;
+            Destroy(bg.gameObject, 11f);
         }
 
         void BuildScoreboard()

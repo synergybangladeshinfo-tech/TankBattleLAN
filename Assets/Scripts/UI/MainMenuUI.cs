@@ -46,6 +46,7 @@ namespace TankBattle.UI
         // Live 3D tank preview (Garage): rendered into a texture by its own rig.
         RenderTexture _previewRT;
         GameObject _previewRig, _previewTank, _previewModel;
+        RawImage _heroImage;
         RawImage _previewImage;
 
         void Start()
@@ -100,9 +101,17 @@ namespace TankBattle.UI
             if (_lobbyPanel.gameObject.activeSelf)
                 RefreshLobby();
 
-            // Slowly rotate the Garage's 3D preview tank.
-            if (_garagePanel != null && _garagePanel.gameObject.activeSelf && _previewTank != null)
-                _previewTank.transform.Rotate(0f, 35f * Time.deltaTime, 0f);
+            // The preview tank turns all the time now: it doubles as the menu
+            // backdrop, so it should never sit frozen.
+            if (_previewTank != null)
+            {
+                bool inGarage = _garagePanel != null && _garagePanel.gameObject.activeSelf;
+                _previewTank.transform.Rotate(0f, (inGarage ? 35f : 14f) * Time.deltaTime, 0f);
+            }
+
+            // Hide the ghost tank while the Garage is showing its own preview.
+            if (_heroImage != null && _garagePanel != null)
+                _heroImage.enabled = !_garagePanel.gameObject.activeSelf;
         }
 
         void OnDestroy()
@@ -119,6 +128,22 @@ namespace TankBattle.UI
                 Color.white, Vector2.zero, Vector2.one,
                 Vector2.zero, Vector2.zero);
             bg.GetComponent<Image>().sprite = UIFactory.MenuBackgroundSprite;
+
+            // Live 3D tank turning slowly behind everything. Reuses the Garage
+            // preview rig, so it costs one small render texture and instantly
+            // makes the menu feel like a game rather than a settings screen.
+            EnsurePreviewRig();
+            var heroGo = new GameObject("HeroTank", typeof(RawImage));
+            heroGo.transform.SetParent(_canvas.transform, false);
+            _heroImage = heroGo.GetComponent<RawImage>();
+            _heroImage.texture = _previewRT;
+            _heroImage.color = new Color(1f, 1f, 1f, 0.30f);   // ghosted back
+            _heroImage.raycastTarget = false;
+            var heroRt = (RectTransform)heroGo.transform;
+            heroRt.anchorMin = heroRt.anchorMax = heroRt.pivot = new Vector2(0.5f, 0.5f);
+            heroRt.sizeDelta = new Vector2(1000, 1000);
+            heroRt.anchoredPosition = new Vector2(0, -60);
+            RefreshPreviewTank();
 
             // Warm glow behind the title so the top of the screen has some life.
             var glow = UIFactory.CreatePanel(_canvas.transform, "TitleGlow",
@@ -155,7 +180,7 @@ namespace TankBattle.UI
                 "OFFLINE  ·  WI-FI / HOTSPOT  ·  16 PLAYERS  ·  5 MODES", 26, UIFactory.TextDim);
             UIFactory.SetAnchoredPos(sub, new Vector2(0.5f, 1f), new Vector2(0, -212));
 
-            var ver = UIFactory.CreateText(_canvas.transform, "Version", "v2.8", 22,
+            var ver = UIFactory.CreateText(_canvas.transform, "Version", "v2.9", 22,
                 new Color(0.45f, 0.50f, 0.58f, 1f));
             UIFactory.SetAnchoredPos(ver, new Vector2(1f, 0f), new Vector2(-30, 26));
 
@@ -437,7 +462,7 @@ namespace TankBattle.UI
         {
             if (_previewRig != null) return;
 
-            _previewRT = new RenderTexture(512, 512, 16);
+            _previewRT = new RenderTexture(512, 512, 16, RenderTextureFormat.ARGB32);
             _previewRig = new GameObject("TankPreviewRig");
             _previewRig.transform.position = new Vector3(0f, -80f, 0f); // out of sight
 
@@ -448,7 +473,8 @@ namespace TankBattle.UI
             var cam = camGo.AddComponent<Camera>();
             cam.targetTexture = _previewRT;
             cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = new Color(0.09f, 0.12f, 0.17f, 1f);
+            // Transparent clear so the tank can float over the menu backdrop.
+            cam.backgroundColor = new Color(0.09f, 0.12f, 0.17f, 0f);
             cam.fieldOfView = 32f;
             cam.farClipPlane = 50f;
 
@@ -619,6 +645,36 @@ namespace TankBattle.UI
                         GameSession.SelectedMapIndex = index;
                         HighlightSelectors();
                     }, 30);
+
+                // Rounded body + a colour swatch and weather tag, so you can
+                // tell the five maps apart at a glance instead of reading names.
+                var bImg = b.GetComponent<Image>();
+                bImg.sprite = UIFactory.RoundedSprite;
+                bImg.type = Image.Type.Sliced;
+
+                var swatch = UIFactory.CreateRoundedPanel(b.transform, "Swatch",
+                    GameConstants.MapThemeColors[i], new Vector2(54, 54));
+                swatch.anchorMin = swatch.anchorMax = swatch.pivot = new Vector2(0f, 0.5f);
+                swatch.anchoredPosition = new Vector2(38, 0);
+                swatch.GetComponent<Image>().raycastTarget = false;
+
+                var weather = UIFactory.CreateText(b.transform, "Weather",
+                    GameConstants.MapWeatherLabels[i], 20, UIFactory.TextDim,
+                    TextAnchor.MiddleRight);
+                var wRt = (RectTransform)weather.transform;
+                wRt.anchorMin = wRt.anchorMax = wRt.pivot = new Vector2(1f, 0.5f);
+                wRt.sizeDelta = new Vector2(190, 30);
+                wRt.anchoredPosition = new Vector2(-22, 0);
+
+                // Shift the label clear of the swatch.
+                var lbl = b.GetComponentInChildren<Text>();
+                if (lbl != null && lbl != weather)
+                {
+                    var lRt = (RectTransform)lbl.transform;
+                    lRt.offsetMin = new Vector2(76, lRt.offsetMin.y);
+                    lRt.offsetMax = new Vector2(-190, lRt.offsetMax.y);
+                    lbl.alignment = TextAnchor.MiddleLeft;
+                }
                 _mapButtons.Add(b);
             }
 
