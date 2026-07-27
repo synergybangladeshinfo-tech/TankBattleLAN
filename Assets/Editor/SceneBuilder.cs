@@ -72,79 +72,216 @@ namespace TankBattle.EditorTools
             {
                 new MapDef
                 {
-                    SceneName = "Map01_Arena", DisplayName = "Open Arena", Theme = MapTheme.Desert,
+                    SceneName = "Map01_Arena", DisplayName = "Desert Ruins", Theme = MapTheme.Desert,
                     Weather = GameConstants.Weather.DustStorm,
                     Ground = new Color(0.76f, 0.70f, 0.50f), Wall = new Color(0.45f, 0.36f, 0.26f),
                     Obstacle = new Color(0.55f, 0.45f, 0.30f), Sky = new Color(0.55f, 0.75f, 0.95f),
                     Ambient = new Color(0.55f, 0.55f, 0.55f),
                     BuildObstacles = d =>
                     {
-                        foreach (var sx in new[] { -1f, 1f })
-                            foreach (var sz in new[] { -1f, 1f })
-                                Box(d, "Crate", new Vector3(8f * sx, 1f, 8f * sz), new Vector3(4f, 2f, 4f));
-                        Box(d, "WallE", new Vector3(16f, 1.25f, 0f), new Vector3(2f, 2.5f, 10f));
-                        Box(d, "WallW", new Vector3(-16f, 1.25f, 0f), new Vector3(2f, 2.5f, 10f));
+                        // OPEN DESERT: long sightlines broken by rolling dunes,
+                        // a ruined outpost and a wrecked convoy. Almost no hard
+                        // cover in the middle - this is the sniper's map.
+                        for (int i = 0; i < 12; i++)
+                        {
+                            float a = i * 30f * Mathf.Deg2Rad;
+                            float r = 22f + (i % 3) * 13f;
+                            var dune = Sphere(d, "Dune",
+                                new Vector3(Mathf.Cos(a) * r, -1.2f, Mathf.Sin(a) * r),
+                                new Vector3(18f + (i % 4) * 6f, 5.5f, 14f + (i % 3) * 6f));
+                            dune.transform.rotation = Quaternion.Euler(0f, i * 37f, 0f);
+                        }
+
+                        // Ruined outpost in the west - the only real hard cover.
+                        var r1 = Box(d, "Ruin", new Vector3(-32f, 2.2f, 14f), new Vector3(22f, 4.4f, 1.6f));
+                        r1.transform.rotation = Quaternion.Euler(0f, 18f, 0f);
+                        var r2 = Box(d, "Ruin", new Vector3(-18f, 1.6f, -6f), new Vector3(16f, 3.2f, 1.6f));
+                        r2.transform.rotation = Quaternion.Euler(0f, -52f, 0f);
+                        var r3 = Box(d, "Ruin", new Vector3(-42f, 1.3f, -18f), new Vector3(14f, 2.6f, 1.6f));
+                        r3.transform.rotation = Quaternion.Euler(0f, 74f, 0f);
+                        Cylinder(d, "RuinColumn", new Vector3(-27f, 3.0f, -2f), new Vector3(2.0f, 3.0f, 2.0f));
+                        Cylinder(d, "RuinColumn", new Vector3(-36f, 2.4f, 4f), new Vector3(2.0f, 2.4f, 2.0f));
+
+                        // Wrecked convoy strung along a dry track to the east.
+                        for (int i = 0; i < 6; i++)
+                        {
+                            var hulk = Box(d, "Wreck",
+                                new Vector3(16f + i * 8f, 1.3f, 26f - i * 10f),
+                                new Vector3(6.5f, 2.6f, 3.2f));
+                            hulk.transform.rotation = Quaternion.Euler(0f, 20f + i * 34f, i % 2 == 0 ? 0f : 12f);
+                        }
+
+                        // Two lone rock spires you can circle for cover.
+                        Cylinder(d, "Spire", new Vector3(10f, 5.5f, -26f), new Vector3(4.5f, 5.5f, 4.5f));
+                        Cylinder(d, "Spire", new Vector3(-8f, 4.2f, 40f), new Vector3(3.6f, 4.2f, 3.6f));
                     }
                 },
                 new MapDef
                 {
-                    SceneName = "Map02_Crossfire", DisplayName = "Crossfire", Theme = MapTheme.Urban,
+                    SceneName = "Map02_Crossfire", DisplayName = "City Block", Theme = MapTheme.Urban,
                     Weather = GameConstants.Weather.Night,
                     Ground = new Color(0.45f, 0.52f, 0.58f), Wall = new Color(0.25f, 0.30f, 0.36f),
                     Obstacle = new Color(0.32f, 0.40f, 0.50f), Sky = new Color(0.65f, 0.60f, 0.55f),
                     Ambient = new Color(0.50f, 0.50f, 0.55f),
                     BuildObstacles = d =>
                     {
-                        // Plus-shaped cover with an open centre.
-                        Box(d, "N", new Vector3(0f, 1.5f, 7.5f), new Vector3(2f, 3f, 9f));
-                        Box(d, "S", new Vector3(0f, 1.5f, -7.5f), new Vector3(2f, 3f, 9f));
-                        Box(d, "E", new Vector3(7.5f, 1.5f, 0f), new Vector3(9f, 3f, 2f));
-                        Box(d, "W", new Vector3(-7.5f, 1.5f, 0f), new Vector3(9f, 3f, 2f));
-                        foreach (var sx in new[] { -1f, 1f })
-                            foreach (var sz in new[] { -1f, 1f })
+                        // CITY BLOCK: a real street grid. Tall blocks form
+                        // avenues and back alleys, so fighting is corner to
+                        // corner instead of across an open field.
+                        float[] cx = { -34f, -12f, 12f, 34f };
+                        float[] cz = { -34f, -12f, 12f, 34f };
+                        for (int i = 0; i < cx.Length; i++)
+                            for (int j = 0; j < cz.Length; j++)
                             {
-                                Box(d, "CornerA", new Vector3(18f * sx, 1f, 16f * sz), new Vector3(6f, 2f, 2f));
-                                Box(d, "CornerB", new Vector3(16f * sx, 1f, 18f * sz), new Vector3(2f, 2f, 6f));
+                                // Leave the very centre as a plaza.
+                                if (Mathf.Abs(cx[i]) < 20f && Mathf.Abs(cz[j]) < 20f) continue;
+
+                                float h = 4f + ((i * 3 + j * 5) % 4) * 2.2f;
+                                Box(d, "Building", new Vector3(cx[i], h * 0.5f, cz[j]),
+                                    new Vector3(13f, h, 13f));
+                                // Doorway-height ledge so buildings read as buildings.
+                                Box(d, "Ledge", new Vector3(cx[i], h + 0.35f, cz[j]),
+                                    new Vector3(14.5f, 0.7f, 14.5f));
                             }
+
+                        // Central plaza: a fountain ring plus low benches.
+                        Cylinder(d, "Fountain", new Vector3(0f, 0.7f, 0f), new Vector3(5f, 0.7f, 5f));
+                        Cylinder(d, "FountainTop", new Vector3(0f, 1.6f, 0f), new Vector3(1.6f, 1.6f, 1.6f));
+                        foreach (var s in new[] { -1f, 1f })
+                        {
+                            Box(d, "Bench", new Vector3(9f * s, 0.5f, 0f), new Vector3(1.2f, 1f, 6f));
+                            Box(d, "Bench", new Vector3(0f, 0.5f, 9f * s), new Vector3(6f, 1f, 1.2f));
+                        }
+
+                        // Sandbag barricades across the avenues.
+                        foreach (var s in new[] { -1f, 1f })
+                        {
+                            Box(d, "Barricade", new Vector3(23f * s, 0.8f, 0f), new Vector3(1.6f, 1.6f, 9f));
+                            Box(d, "Barricade", new Vector3(0f, 0.8f, 23f * s), new Vector3(9f, 1.6f, 1.6f));
+                        }
+
+                        // Overpass slab you can drive under, hover over.
+                        Box(d, "Overpass", new Vector3(0f, 5.2f, -46f), new Vector3(30f, 0.8f, 6f));
+                        Box(d, "OverpassLegL", new Vector3(-13f, 2.6f, -46f), new Vector3(1.6f, 5.2f, 5f));
+                        Box(d, "OverpassLegR", new Vector3(13f, 2.6f, -46f), new Vector3(1.6f, 5.2f, 5f));
                     }
                 },
                 new MapDef
                 {
-                    SceneName = "Map03_Maze", DisplayName = "The Maze", Theme = MapTheme.Forest,
+                    SceneName = "Map03_Maze", DisplayName = "Deep Forest", Theme = MapTheme.Forest,
                     Weather = GameConstants.Weather.Rain,
                     Ground = new Color(0.40f, 0.55f, 0.35f), Wall = new Color(0.28f, 0.35f, 0.25f),
                     Obstacle = new Color(0.36f, 0.44f, 0.30f), Sky = new Color(0.60f, 0.80f, 0.70f),
                     Ambient = new Color(0.50f, 0.55f, 0.50f),
                     BuildObstacles = d =>
                     {
-                        Box(d, "M1", new Vector3(-13f, 1.5f, 10f), new Vector3(16f, 3f, 1.5f));
-                        Box(d, "M2", new Vector3(13f, 1.5f, 10f), new Vector3(16f, 3f, 1.5f));
-                        Box(d, "M3", new Vector3(-13f, 1.5f, -10f), new Vector3(16f, 3f, 1.5f));
-                        Box(d, "M4", new Vector3(13f, 1.5f, -10f), new Vector3(16f, 3f, 1.5f));
-                        Box(d, "M5", new Vector3(0f, 1.5f, 0f), new Vector3(1.5f, 3f, 12f));
-                        Box(d, "M6", new Vector3(-20f, 1.5f, 0f), new Vector3(1.5f, 3f, 10f));
-                        Box(d, "M7", new Vector3(20f, 1.5f, 0f), new Vector3(1.5f, 3f, 10f));
-                        Box(d, "M8", new Vector3(-8f, 1.5f, 0f), new Vector3(8f, 3f, 1.5f));
-                        Box(d, "M9", new Vector3(8f, 1.5f, 0f), new Vector3(8f, 3f, 1.5f));
+                        // DEEP FOREST: a rocky ridge splits the map in two, with
+                        // only three ways through. Winding log walls make the
+                        // flanks a genuine maze rather than a grid.
+                        for (int i = 0; i < 11; i++)
+                        {
+                            float x = -55f + i * 11f;
+                            // Gaps at three points so the ridge is passable.
+                            if (i == 2 || i == 5 || i == 8) continue;
+                            var rock = Sphere(d, "Ridge", new Vector3(x, 0.4f, 0f),
+                                new Vector3(11f, 6.5f, 8f));
+                            rock.transform.rotation = Quaternion.Euler(0f, i * 29f, 0f);
+                        }
+
+                        // Winding log walls in the north half.
+                        var w1 = Box(d, "Logs", new Vector3(-26f, 1.4f, 20f), new Vector3(24f, 2.8f, 1.6f));
+                        w1.transform.rotation = Quaternion.Euler(0f, 14f, 0f);
+                        var w2 = Box(d, "Logs", new Vector3(-8f, 1.4f, 32f), new Vector3(1.6f, 2.8f, 18f));
+                        w2.transform.rotation = Quaternion.Euler(0f, -22f, 0f);
+                        var w3 = Box(d, "Logs", new Vector3(16f, 1.4f, 24f), new Vector3(26f, 2.8f, 1.6f));
+                        w3.transform.rotation = Quaternion.Euler(0f, -9f, 0f);
+                        var w4 = Box(d, "Logs", new Vector3(34f, 1.4f, 38f), new Vector3(1.6f, 2.8f, 22f));
+                        w4.transform.rotation = Quaternion.Euler(0f, 16f, 0f);
+
+                        // and the south half, mirrored but not identical.
+                        var w5 = Box(d, "Logs", new Vector3(24f, 1.4f, -20f), new Vector3(26f, 2.8f, 1.6f));
+                        w5.transform.rotation = Quaternion.Euler(0f, -13f, 0f);
+                        var w6 = Box(d, "Logs", new Vector3(6f, 1.4f, -34f), new Vector3(1.6f, 2.8f, 20f));
+                        w6.transform.rotation = Quaternion.Euler(0f, 25f, 0f);
+                        var w7 = Box(d, "Logs", new Vector3(-20f, 1.4f, -26f), new Vector3(22f, 2.8f, 1.6f));
+                        w7.transform.rotation = Quaternion.Euler(0f, 11f, 0f);
+                        var w8 = Box(d, "Logs", new Vector3(-38f, 1.4f, -40f), new Vector3(1.6f, 2.8f, 20f));
+
+                        // Fallen trunks you can shelter behind.
+                        for (int i = 0; i < 7; i++)
+                        {
+                            float a = i * 51f * Mathf.Deg2Rad;
+                            var trunk = Cylinder(d, "FallenTrunk",
+                                new Vector3(Mathf.Cos(a) * 42f, 0.8f, Mathf.Sin(a) * 42f),
+                                new Vector3(1.5f, 5f, 1.5f));
+                            trunk.transform.rotation = Quaternion.Euler(90f, i * 43f, 0f);
+                        }
                     }
                 },
                 new MapDef
                 {
-                    SceneName = "Map04_Pillars", DisplayName = "Pillar Field", Theme = MapTheme.Alien,
+                    SceneName = "Map04_Pillars", DisplayName = "Space Deck", Theme = MapTheme.Alien,
                     Weather = GameConstants.Weather.Clear,
                     Ground = new Color(0.35f, 0.33f, 0.40f), Wall = new Color(0.22f, 0.20f, 0.28f),
                     Obstacle = new Color(0.55f, 0.50f, 0.65f), Sky = new Color(0.30f, 0.25f, 0.45f),
                     Ambient = new Color(0.45f, 0.42f, 0.55f),
                     BuildObstacles = d =>
                     {
-                        float[] grid = { -16f, -8f, 0f, 8f, 16f };
-                        foreach (var x in grid)
-                            foreach (var z in grid)
+                        // SPACE PLATFORM: floating decks at different heights with
+                        // gaps between them. The only map where HOVER genuinely
+                        // pays off, because the high ground is not walkable.
+                        var decks = new[]
+                        {
+                            new Vector4(  0f, 0.0f,   0f, 32f),  // x, top height, z, diameter
+                            new Vector4( 36f, 3.0f,  24f, 22f),
+                            new Vector4(-36f, 3.0f, -24f, 22f),
+                            new Vector4( 32f, 5.5f, -32f, 18f),
+                            new Vector4(-32f, 5.5f,  32f, 18f),
+                            new Vector4(  0f, 7.5f,  50f, 16f),
+                            new Vector4(  0f, 7.5f, -50f, 16f)
+                        };
+                        foreach (var deck in decks)
+                        {
+                            if (deck.y <= 0.01f) continue;  // centre deck is the ground itself
+                            float half = (deck.y + 0.6f) * 0.5f;
+                            Cylinder(d, "Deck", new Vector3(deck.x, deck.y - half, deck.z),
+                                new Vector3(deck.w, half, deck.w));
+                            // Guard-rail posts so the edge reads clearly.
+                            for (int i = 0; i < 8; i++)
                             {
-                                // Keep the spawn corners clear.
-                                if (Mathf.Abs(x) > 12f && Mathf.Abs(z) > 12f) continue;
-                                Cylinder(d, "Pillar", new Vector3(x, 2f, z), new Vector3(2.4f, 2f, 2.4f));
+                                float a = i * 45f * Mathf.Deg2Rad;
+                                Cylinder(d, "Rail",
+                                    new Vector3(deck.x + Mathf.Cos(a) * deck.w * 0.43f,
+                                                deck.y + 0.7f,
+                                                deck.z + Mathf.Sin(a) * deck.w * 0.43f),
+                                    new Vector3(0.5f, 0.7f, 0.5f));
                             }
+                        }
+
+                        // Ramps up to the two mid decks - everything higher needs hover.
+                        var b1 = Box(d, "Ramp", new Vector3(24f, 1.5f, 16f), new Vector3(7f, 0.6f, 15f));
+                        b1.transform.rotation = Quaternion.Euler(-12f, 34f, 0f);
+                        var b2 = Box(d, "Ramp", new Vector3(-24f, 1.5f, -16f), new Vector3(7f, 0.6f, 15f));
+                        b2.transform.rotation = Quaternion.Euler(-12f, 214f, 0f);
+
+                        // Glowing monoliths clustered in the middle for cover.
+                        for (int i = 0; i < 7; i++)
+                        {
+                            float a = i * 51.4f * Mathf.Deg2Rad;
+                            var m = Box(d, "Monolith",
+                                new Vector3(Mathf.Cos(a) * 12f, 3.5f, Mathf.Sin(a) * 12f),
+                                new Vector3(3.0f, 7f, 3.0f));
+                            m.transform.rotation = Quaternion.Euler(0f, i * 36f, 0f);
+                        }
+
+                        // Outer ring of thin spires - visual scale, light cover.
+                        for (int i = 0; i < 10; i++)
+                        {
+                            float a = (i * 36f + 18f) * Mathf.Deg2Rad;
+                            Cylinder(d, "Spire",
+                                new Vector3(Mathf.Cos(a) * 58f, 6f, Mathf.Sin(a) * 58f),
+                                new Vector3(2.2f, 6f, 2.2f));
+                        }
                     }
                 },
                 new MapDef
@@ -156,21 +293,59 @@ namespace TankBattle.EditorTools
                     Ambient = new Color(0.60f, 0.50f, 0.45f),
                     BuildObstacles = d =>
                     {
-                        // Central fort: four walls, each with a doorway gap.
+                        // FORTRESS: an outer curtain wall with four gateways,
+                        // corner towers, and a raised keep in the middle. Whoever
+                        // holds the keep holds the map - so everyone fights for it.
+                        const float R = 44f;      // curtain wall distance from centre
+                        const float gate = 9f;    // half-width of each gateway
+                        float seg = (R - gate) * 0.5f;          // length of one wall half
+                        float off = gate + seg * 0.5f;          // its centre offset
+
                         foreach (var s in new[] { -1f, 1f })
                         {
-                            Box(d, "FortNS_A", new Vector3(-6.5f, 1.5f, 10f * s), new Vector3(7f, 3f, 1.5f));
-                            Box(d, "FortNS_B", new Vector3(6.5f, 1.5f, 10f * s), new Vector3(7f, 3f, 1.5f));
-                            Box(d, "FortEW_A", new Vector3(10f * s, 1.5f, -6.5f), new Vector3(1.5f, 3f, 7f));
-                            Box(d, "FortEW_B", new Vector3(10f * s, 1.5f, 6.5f), new Vector3(1.5f, 3f, 7f));
+                            // North / south curtain, split around a central gate.
+                            Box(d, "Curtain", new Vector3(-off, 3f, R * s), new Vector3(seg, 6f, 2.6f));
+                            Box(d, "Curtain", new Vector3(off, 3f, R * s), new Vector3(seg, 6f, 2.6f));
+                            // East / west curtain.
+                            Box(d, "Curtain", new Vector3(R * s, 3f, -off), new Vector3(2.6f, 6f, seg));
+                            Box(d, "Curtain", new Vector3(R * s, 3f, off), new Vector3(2.6f, 6f, seg));
                         }
+
+                        // Corner towers.
                         foreach (var sx in new[] { -1f, 1f })
                             foreach (var sz in new[] { -1f, 1f })
                             {
-                                var bunker = Box(d, "Bunker", new Vector3(19f * sx, 1f, 19f * sz),
-                                                 new Vector3(7f, 2f, 2f));
-                                bunker.transform.rotation = Quaternion.Euler(0f, 45f * sx * sz, 0f);
+                                Cylinder(d, "Tower", new Vector3(R * sx, 4.5f, R * sz),
+                                    new Vector3(9f, 4.5f, 9f));
+                                Cylinder(d, "TowerCap", new Vector3(R * sx, 9.4f, R * sz),
+                                    new Vector3(10.5f, 0.4f, 10.5f));
                             }
+
+                        // Inner keep - a raised square you must climb via ramps.
+                        Box(d, "Keep", new Vector3(0f, 2.2f, 0f), new Vector3(26f, 4.4f, 26f));
+                        var rampN = Box(d, "Ramp", new Vector3(0f, 2.2f, 21f), new Vector3(10f, 0.7f, 16f));
+                        rampN.transform.rotation = Quaternion.Euler(-16f, 0f, 0f);
+                        var rampS = Box(d, "Ramp", new Vector3(0f, 2.2f, -21f), new Vector3(10f, 0.7f, 16f));
+                        rampS.transform.rotation = Quaternion.Euler(16f, 0f, 0f);
+
+                        // Battlements around the keep roof for cover up top.
+                        for (int i = 0; i < 12; i++)
+                        {
+                            float t = i / 12f * Mathf.PI * 2f;
+                            Box(d, "Merlon",
+                                new Vector3(Mathf.Cos(t) * 11.5f, 5.4f, Mathf.Sin(t) * 11.5f),
+                                new Vector3(2.4f, 2f, 2.4f));
+                        }
+
+                        // Courtyard buildings between the wall and the keep.
+                        for (int i = 0; i < 8; i++)
+                        {
+                            float t = (i + 0.5f) / 8f * Mathf.PI * 2f;
+                            var st = Box(d, "Stable",
+                                new Vector3(Mathf.Cos(t) * 32f, 1.8f, Mathf.Sin(t) * 32f),
+                                new Vector3(9f, 3.6f, 5.5f));
+                            st.transform.rotation = Quaternion.Euler(0f, -t * Mathf.Rad2Deg, 0f);
+                        }
                     }
                 }
             };
@@ -183,7 +358,6 @@ namespace TankBattle.EditorTools
         // v2.7: the arena is now 140 x 140 - about THREE TIMES the old playable
         // area, so 16 tanks have somewhere to go and the cover actually matters.
         const float ArenaHalf = 70f;    // 140 x 140 playfield
-        const float LayoutScale = 2.28f; // obstacle layouts were authored for 60x60
 
         static void BuildMap(MapDef d)
         {
@@ -263,10 +437,12 @@ namespace TankBattle.EditorTools
             Box(d, "WallE", new Vector3(ArenaHalf + 0.5f, 1.5f, 0f), new Vector3(1f, 3f, ArenaHalf * 2f + 2f), _wall);
             Box(d, "WallW", new Vector3(-ArenaHalf - 0.5f, 1.5f, 0f), new Vector3(1f, 3f, ArenaHalf * 2f + 2f), _wall);
 
-            // Map-specific obstacles (scaled up into the bigger arena).
-            _layoutScale = LayoutScale;
-            d.BuildObstacles?.Invoke(d);
+            // Map-specific obstacles. v3.1: every map is authored directly in
+            // full 140 x 140 arena coordinates, so no rescaling is applied - the
+            // five layouts are genuinely different shapes, not the same layout
+            // stretched by different amounts.
             _layoutScale = 1f;
+            d.BuildObstacles?.Invoke(d);
 
             // Decorative scenery ring between the action and the walls,
             // plus themed props INSIDE the arena (trees, barrels, crystals...),
@@ -401,45 +577,101 @@ namespace TankBattle.EditorTools
                 Color.Lerp(d.Obstacle, Color.black, 0.25f), TextureBuilder.StoneTile, 2f,
                 TextureBuilder.StoneTileN);
 
-            // Ring of rocks (deterministic pseudo-random sizes/offsets).
-            for (int i = 0; i < 22; i++)
+            // v3.1: the perimeter silhouette is now themed. This used to be the
+            // same rock ring + four watchtowers on every map, which is the main
+            // reason all five arenas looked identical from the cockpit.
+            for (int i = 0; i < 26; i++)
             {
-                float ang = (i * 16.4f + 11f) * Mathf.Deg2Rad;
+                float ang = (i * 13.85f + 11f) * Mathf.Deg2Rad;
                 float radius = 66.5f + ((i * 7) % 3) * 0.9f;
                 Vector3 pos = new Vector3(Mathf.Sin(ang) * radius, 0f, Mathf.Cos(ang) * radius);
-                float s = 1.6f + ((i * 13) % 5) * 0.5f;
+                float yaw = Mathf.Atan2(pos.x, pos.z) * Mathf.Rad2Deg;
 
-                var rock = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                rock.name = $"Rock_{i}";
-                if (_obstacleParent != null) rock.transform.SetParent(_obstacleParent, false);
-                rock.transform.position = new Vector3(pos.x, s * 0.35f, pos.z);
-                rock.transform.localScale = new Vector3(s, s * 0.7f, s);
-                rock.transform.rotation = Quaternion.Euler(0f, i * 47f, 0f);
-                rock.GetComponent<MeshRenderer>().sharedMaterial = rockMat;
-                rock.isStatic = true;
+                switch (d.Theme)
+                {
+                    case MapTheme.Desert:
+                    {
+                        // Big wind-shaped dunes, low and wide.
+                        float s = 9f + ((i * 13) % 5) * 3f;
+                        var dune = Prim(PrimitiveType.Sphere, "SkylineDune",
+                            new Vector3(pos.x, -s * 0.16f, pos.z),
+                            new Vector3(s, s * 0.42f, s * 0.8f), rockMat);
+                        dune.transform.rotation = Quaternion.Euler(0f, i * 47f, 0f);
+                        break;
+                    }
+                    case MapTheme.Urban:
+                    {
+                        // Distant tower blocks - a real skyline.
+                        float h = 14f + ((i * 11) % 6) * 5f;
+                        Prim(PrimitiveType.Cube, "SkylineTower",
+                            new Vector3(pos.x, h * 0.5f, pos.z),
+                            new Vector3(9f + (i % 3) * 3f, h, 9f + (i % 4) * 3f), _wall)
+                            .transform.rotation = Quaternion.Euler(0f, yaw + (i % 5) * 7f, 0f);
+                        break;
+                    }
+                    case MapTheme.Forest:
+                    {
+                        // A wall of tall conifers.
+                        float h = 9f + ((i * 17) % 5) * 2.5f;
+                        Prim(PrimitiveType.Cylinder, "TreeTrunk",
+                            new Vector3(pos.x, h * 0.35f, pos.z),
+                            new Vector3(1.4f, h * 0.35f, 1.4f), rockMat);
+                        var crown = Prim(PrimitiveType.Sphere, "TreeCrown",
+                            new Vector3(pos.x, h * 0.85f, pos.z),
+                            new Vector3(7f, h * 0.85f, 7f), _obstacle);
+                        Object.DestroyImmediate(crown.GetComponent<Collider>());
+                        break;
+                    }
+                    case MapTheme.Alien:
+                    {
+                        // Tilted crystal shards leaning over the arena.
+                        float h = 12f + ((i * 19) % 5) * 4f;
+                        var shard = Prim(PrimitiveType.Cube, "Shard",
+                            new Vector3(pos.x, h * 0.4f, pos.z),
+                            new Vector3(3.5f, h, 3.5f), _obstacle);
+                        shard.transform.rotation =
+                            Quaternion.Euler((i % 2 == 0 ? 14f : -11f), yaw, (i % 3) * 6f);
+                        break;
+                    }
+                    default: // Fort
+                    {
+                        // A continuous rampart with battlements.
+                        Prim(PrimitiveType.Cube, "Rampart",
+                            new Vector3(pos.x, 4f, pos.z), new Vector3(11f, 8f, 3f), _wall)
+                            .transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+                        Prim(PrimitiveType.Cube, "RampartMerlon",
+                            new Vector3(pos.x, 8.7f, pos.z), new Vector3(2.4f, 1.6f, 3.4f), _obstacle)
+                            .transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+                        break;
+                    }
+                }
             }
 
-            // Four corner watchtowers.
-            foreach (var sx in new[] { -1f, 1f })
-                foreach (var sz in new[] { -1f, 1f })
-                {
-                    var baseGo = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                    baseGo.name = "TowerBase";
-                    if (_obstacleParent != null) baseGo.transform.SetParent(_obstacleParent, false);
-                    baseGo.transform.position = new Vector3(37f * sx, 3f, 37f * sz);
-                    baseGo.transform.localScale = new Vector3(3f, 3f, 3f);
-                    baseGo.GetComponent<MeshRenderer>().sharedMaterial = _wall;
-                    baseGo.isStatic = true;
+            // Corner watchtowers only where a fortified map wants them.
+            if (d.Theme == MapTheme.Fort || d.Theme == MapTheme.Urban)
+                foreach (var sx in new[] { -1f, 1f })
+                    foreach (var sz in new[] { -1f, 1f })
+                    {
+                        Prim(PrimitiveType.Cylinder, "TowerBase",
+                            new Vector3(60f * sx, 3f, 60f * sz), new Vector3(3f, 3f, 3f), _wall);
+                        var top = Prim(PrimitiveType.Cube, "TowerTop",
+                            new Vector3(60f * sx, 6.4f, 60f * sz), new Vector3(4.2f, 0.9f, 4.2f), _obstacle);
+                        Object.DestroyImmediate(top.GetComponent<Collider>()); // out of reach anyway
+                    }
+        }
 
-                    var top = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                    top.name = "TowerTop";
-                    if (_obstacleParent != null) top.transform.SetParent(_obstacleParent, false);
-                    top.transform.position = new Vector3(37f * sx, 6.4f, 37f * sz);
-                    top.transform.localScale = new Vector3(4.2f, 0.9f, 4.2f);
-                    top.GetComponent<MeshRenderer>().sharedMaterial = _obstacle;
-                    top.isStatic = true;
-                    Object.DestroyImmediate(top.GetComponent<Collider>()); // out of reach anyway
-                }
+        /// <summary>Create a primitive parented to the geometry root, in absolute
+        /// world coordinates (scenery is never affected by the layout scale).</summary>
+        static GameObject Prim(PrimitiveType type, string name, Vector3 pos, Vector3 scale, Material mat)
+        {
+            var go = GameObject.CreatePrimitive(type);
+            go.name = name;
+            if (_obstacleParent != null) go.transform.SetParent(_obstacleParent, false);
+            go.transform.position = pos;
+            go.transform.localScale = scale;
+            go.GetComponent<MeshRenderer>().sharedMaterial = mat;
+            go.isStatic = true;
+            return go;
         }
 
         // ----------------------------------------------------- themed textures
@@ -475,15 +707,66 @@ namespace TankBattle.EditorTools
         /// crate points and spawn ring) - cover + atmosphere in one.</summary>
         static void BuildInteriorDecor(MapDef d)
         {
-            Vector3[] spots =
+            // v3.1: prop spots follow each map's own layout instead of the same
+            // fourteen positions everywhere - props used to sit inside walls on
+            // some maps and made every arena read the same on others.
+            Vector3[] spots = d.Theme switch
             {
-                new Vector3( 34f, 0f,  14f), new Vector3(-34f, 0f,  14f),
-                new Vector3( 34f, 0f, -14f), new Vector3(-34f, 0f, -14f),
-                new Vector3( 14f, 0f,  34f), new Vector3(-14f, 0f,  34f),
-                new Vector3( 14f, 0f, -34f), new Vector3(-14f, 0f, -34f),
-                new Vector3( 56f, 0f,  22f), new Vector3(-56f, 0f,  22f),
-                new Vector3( 22f, 0f,  56f), new Vector3(-22f, 0f, -56f),
-                new Vector3( 46f, 0f, -46f), new Vector3(-46f, 0f,  46f)
+                // Desert: props hug the ruins and the convoy track.
+                MapTheme.Desert => new[]
+                {
+                    new Vector3(-30f, 0f,   4f), new Vector3(-38f, 0f,  -8f),
+                    new Vector3(-22f, 0f,  22f), new Vector3( 22f, 0f,  16f),
+                    new Vector3( 34f, 0f,   2f), new Vector3( 46f, 0f, -14f),
+                    new Vector3(  4f, 0f, -40f), new Vector3(-12f, 0f, -46f),
+                    new Vector3( 52f, 0f,  30f), new Vector3(-52f, 0f,  34f),
+                    new Vector3( 30f, 0f,  50f), new Vector3(-30f, 0f, -52f),
+                    new Vector3( 56f, 0f, -46f), new Vector3(-56f, 0f,  10f)
+                },
+                // Urban: props line the avenues, never inside a building.
+                MapTheme.Urban => new[]
+                {
+                    new Vector3(  0f, 0f,  23f), new Vector3(  0f, 0f, -23f),
+                    new Vector3( 23f, 0f,   0f), new Vector3(-23f, 0f,   0f),
+                    new Vector3( 23f, 0f,  23f), new Vector3(-23f, 0f, -23f),
+                    new Vector3( 23f, 0f, -23f), new Vector3(-23f, 0f,  23f),
+                    new Vector3( 48f, 0f,  12f), new Vector3(-48f, 0f, -12f),
+                    new Vector3( 12f, 0f,  48f), new Vector3(-12f, 0f, -48f),
+                    new Vector3( 52f, 0f, -50f), new Vector3(-52f, 0f,  50f)
+                },
+                // Forest: trees crowd the open lanes either side of the ridge.
+                MapTheme.Forest => new[]
+                {
+                    new Vector3(-44f, 0f,  12f), new Vector3(-16f, 0f,  12f),
+                    new Vector3( 14f, 0f,  12f), new Vector3( 44f, 0f,  12f),
+                    new Vector3(-44f, 0f, -12f), new Vector3(-16f, 0f, -12f),
+                    new Vector3( 14f, 0f, -12f), new Vector3( 44f, 0f, -12f),
+                    new Vector3(-52f, 0f,  46f), new Vector3( 52f, 0f,  46f),
+                    new Vector3(-52f, 0f, -46f), new Vector3( 52f, 0f, -46f),
+                    new Vector3(  0f, 0f,  56f), new Vector3(  0f, 0f, -56f)
+                },
+                // Alien: crystals grow in the gaps between the floating decks.
+                MapTheme.Alien => new[]
+                {
+                    new Vector3( 20f, 0f, -12f), new Vector3(-20f, 0f,  12f),
+                    new Vector3( 44f, 0f,   4f), new Vector3(-44f, 0f,  -4f),
+                    new Vector3(  6f, 0f,  32f), new Vector3( -6f, 0f, -32f),
+                    new Vector3( 50f, 0f,  44f), new Vector3(-50f, 0f, -44f),
+                    new Vector3( 50f, 0f, -12f), new Vector3(-50f, 0f,  12f),
+                    new Vector3( 18f, 0f,  60f), new Vector3(-18f, 0f, -60f),
+                    new Vector3(-40f, 0f,  56f), new Vector3( 40f, 0f, -56f)
+                },
+                // Fort: barrels in the courtyard, supplies outside the gates.
+                _ => new[]
+                {
+                    new Vector3( 20f, 0f,  36f), new Vector3(-20f, 0f,  36f),
+                    new Vector3( 20f, 0f, -36f), new Vector3(-20f, 0f, -36f),
+                    new Vector3( 36f, 0f,  20f), new Vector3(-36f, 0f,  20f),
+                    new Vector3( 36f, 0f, -20f), new Vector3(-36f, 0f, -20f),
+                    new Vector3(  0f, 0f,  56f), new Vector3(  0f, 0f, -56f),
+                    new Vector3( 56f, 0f,   0f), new Vector3(-56f, 0f,   0f),
+                    new Vector3( 52f, 0f,  52f), new Vector3(-52f, 0f, -52f)
+                }
             };
 
             var barrelMat = PrefabBuilder.CreateTexturedMaterial("Prop_Barrel",
@@ -622,12 +905,19 @@ namespace TankBattle.EditorTools
                 Bush(p, bushMat, Random.Range(2.2f, 3.4f));
             }
 
-            // Three roofed hideouts (real cover you can shelter under).
-            for (int i = 0; i < 7; i++)
+            // Roofed hideouts - only on the maps that lack natural shelter.
+            int hideCount = d.Theme switch
+            {
+                MapTheme.Desert => 6,
+                MapTheme.Forest => 5,
+                MapTheme.Fort => 3,
+                _ => 0            // City and Space already have roofs and decks
+            };
+            for (int i = 0; i < hideCount; i++)
             {
                 float deg = i * 51.4f + 30f;
                 float ang = deg * Mathf.Deg2Rad;
-                float rad = 24f + (i % 3) * 17f;   // inner + outer rings of nooks
+                float rad = 38f + (i % 3) * 11f;   // pushed out of the centre fight
                 Vector3 p = new Vector3(Mathf.Cos(ang) * rad, 0f, Mathf.Sin(ang) * rad);
                 Hideout(p, deg);
             }
@@ -724,15 +1014,29 @@ namespace TankBattle.EditorTools
         static void BuildPlatforms(MapDef d)
         {
             var platMat = _wall;
-            Vector3[] spots =
+
+            // v3.1: City, Space and Fortress build all of their verticality in
+            // their own layouts (rooftops, decks, the keep), so dropping seven
+            // identical generic platforms on top of them was exactly what made
+            // every map feel the same. Only the two "open" maps get these.
+            Vector3[] spots = d.Theme switch
             {
-                new Vector3( 30f, 0f,  30f),
-                new Vector3(-30f, 0f, -30f),
-                new Vector3(-30f, 0f,  30f),
-                new Vector3( 30f, 0f, -30f),
-                new Vector3(  0f, 0f,  48f),
-                new Vector3(  0f, 0f, -48f),
-                new Vector3( 50f, 0f,   0f)
+                MapTheme.Desert => new[]
+                {
+                    new Vector3( 40f, 0f,  40f),
+                    new Vector3(-40f, 0f, -40f),
+                    new Vector3(-46f, 0f,  30f),
+                    new Vector3( 30f, 0f, -50f),
+                    new Vector3(  0f, 0f,  56f)
+                },
+                MapTheme.Forest => new[]
+                {
+                    new Vector3( 52f, 0f,  26f),   // ranger platforms in the trees
+                    new Vector3(-52f, 0f, -26f),
+                    new Vector3( 26f, 0f, -52f),
+                    new Vector3(-26f, 0f,  52f)
+                },
+                _ => new Vector3[0]
             };
 
             foreach (var spot in spots)
@@ -757,10 +1061,20 @@ namespace TankBattle.EditorTools
             // Scattered low cover blocks around the middle.
             var prev = Random.state;
             Random.InitState(d.SceneName.GetHashCode() + 99);
-            for (int i = 0; i < 26; i++)
+
+            // Scattered low cover - sparse where the layout is already busy.
+            int coverCount = d.Theme switch
+            {
+                MapTheme.Desert => 30,   // the open map needs the most filler
+                MapTheme.Forest => 20,
+                MapTheme.Urban => 12,
+                MapTheme.Alien => 8,
+                _ => 14
+            };
+            for (int i = 0; i < coverCount; i++)
             {
                 Vector3 p = new Vector3(Random.Range(-58f, 58f), 0.6f, Random.Range(-58f, 58f));
-                if (p.magnitude < 8f) continue;
+                if (p.magnitude < 14f) continue;   // never block the centre fight
                 var b = Box(d, "Cover", p, new Vector3(Random.Range(2f, 3.5f), 1.2f, Random.Range(1f, 1.6f)), _obstacle);
                 b.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 180f), 0f);
             }
@@ -1005,6 +1319,18 @@ namespace TankBattle.EditorTools
             go.transform.localScale = scale;
             go.GetComponent<MeshRenderer>().sharedMaterial = mat != null ? mat : _obstacle;
             go.isStatic = true; // static batching for mobile perf
+            return go;
+        }
+
+        static GameObject Sphere(MapDef d, string name, Vector3 pos, Vector3 scale)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            go.name = name;
+            if (_obstacleParent != null) go.transform.SetParent(_obstacleParent, false);
+            go.transform.position = new Vector3(pos.x * _layoutScale, pos.y, pos.z * _layoutScale);
+            go.transform.localScale = scale;
+            go.GetComponent<MeshRenderer>().sharedMaterial = _obstacle;
+            go.isStatic = true;
             return go;
         }
 
