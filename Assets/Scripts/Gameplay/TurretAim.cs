@@ -84,7 +84,9 @@ namespace TankBattle.Gameplay
 
         void Commit(float desired)
         {
-            float next = Mathf.MoveTowardsAngle(TurretYaw.Value, desired, turnSpeed * Time.deltaTime);
+            // The player's aim-sensitivity setting scales how fast the turret slews.
+            float slew = turnSpeed * TankBattle.Core.ControlLayout.Sensitivity;
+            float next = Mathf.MoveTowardsAngle(TurretYaw.Value, desired, slew * Time.deltaTime);
             if (Mathf.Abs(Mathf.DeltaAngle(TurretYaw.Value, next)) > 0.05f)
                 TurretYaw.Value = next;
         }

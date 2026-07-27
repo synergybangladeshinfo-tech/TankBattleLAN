@@ -32,7 +32,9 @@ namespace TankBattle.Gameplay
             _shooterId = shooterId;
             _shooterTeam = shooterTeam;
             _def = Weapons.Get(weaponIndex);
-            _dieAt = Time.time + maxLifetime;
+            // Flame "bullets" burn out almost immediately, which is what turns
+            // the flamethrower into a short cone instead of a machine gun.
+            _dieAt = Time.time + (Weapons.IsShortRange(weaponIndex) ? 0.55f : maxLifetime);
         }
 
         public override void OnNetworkSpawn()
