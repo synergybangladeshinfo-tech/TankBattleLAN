@@ -35,11 +35,13 @@ namespace TankBattle.Networking
         [SerializeField] GameObject bulletPrefab;
         [SerializeField] GameObject pickupPrefab;
         [SerializeField] GameObject grenadePrefab;
+        [SerializeField] GameObject minePrefab;
 
         public GameObject TankPrefab => tankPrefab;
         public GameObject BulletPrefab => bulletPrefab;
         public GameObject PickupPrefab => pickupPrefab;
         public GameObject GrenadePrefab => grenadePrefab;
+        public GameObject MinePrefab => minePrefab;
 
         NetworkManager _nm;
         UnityTransport _transport;
@@ -67,6 +69,7 @@ namespace TankBattle.Networking
             if (bulletPrefab != null) _nm.AddNetworkPrefab(bulletPrefab);
             if (pickupPrefab != null) _nm.AddNetworkPrefab(pickupPrefab);
             if (grenadePrefab != null) _nm.AddNetworkPrefab(grenadePrefab);
+            if (minePrefab != null) _nm.AddNetworkPrefab(minePrefab);
 
             _nm.ConnectionApprovalCallback = ApprovalCheck;
             _nm.OnClientDisconnectCallback += OnClientDisconnect;
