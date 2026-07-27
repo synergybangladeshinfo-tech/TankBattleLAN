@@ -36,7 +36,7 @@ namespace TankBattle.Core
 
         // ---- Mode tuning ----
         public const int LastTankLives = 3;        // lives in Last Tank Standing
-        public const float KothZoneRadius = 7f;    // metres, King of the Hill zone
+        public const float KothZoneRadius = 11f;   // metres, King of the Hill zone (bigger map)
         public const int KothWinScore = 100;       // zone-seconds needed to win instantly
         public const int GunGameKillsPerTier = 2;  // kills to advance one weapon tier
         public const float PickupRespawnSeconds = 12f;
@@ -154,7 +154,7 @@ namespace TankBattle.Core
 
         // ---- Minimap ----
         /// <summary>Half-size of the world area drawn on the minimap (metres).</summary>
-        public const float MinimapWorldRadius = 60f;
+        public const float MinimapWorldRadius = 72f;
 
         // ---- Kill feed / killstreaks ----
         public const int KillFeedMaxRows = 5;
