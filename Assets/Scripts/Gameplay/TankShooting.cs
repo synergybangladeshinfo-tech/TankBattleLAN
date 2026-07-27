@@ -49,6 +49,7 @@ namespace TankBattle.Gameplay
             if (GetComponent<BotTank>() != null) return; // bots fire from BotTank
             if (_health != null && _health.IsDead.Value) return;
             if (MatchManager.Instance != null && MatchManager.Instance.MatchEnded.Value) return;
+            if (MatchManager.Instance != null && !MatchManager.Instance.RoundLive) return;
 
             // Grenade throw (separate cooldown, not gated by the fire button).
             if (HUDController.Instance != null && HUDController.Instance.ConsumeGrenade()
@@ -74,6 +75,7 @@ namespace TankBattle.Gameplay
             if (Weapons.HasZoom(Weapon.Value)) kick = 0.40f;    // sniper really thumps
             else if (Weapons.IsShortRange(Weapon.Value)) kick = 0.03f; // flamer just rumbles
             TankBattle.Utils.CameraFollow.Instance?.Shake(kick);
+            TankBattle.Utils.Haptics.Light();
         }
 
         /// <summary>Owner: ease the chase camera out while sniping.</summary>
@@ -160,6 +162,7 @@ namespace TankBattle.Gameplay
             if (Time.time < _nextServerFire) return;
             if (_health != null && _health.IsDead.Value) return;
             if (MatchManager.Instance != null && MatchManager.Instance.MatchEnded.Value) return;
+            if (MatchManager.Instance != null && !MatchManager.Instance.RoundLive) return;
 
             int weaponIndex = Weapon.Value;
             var def = Weapons.Get(weaponIndex);

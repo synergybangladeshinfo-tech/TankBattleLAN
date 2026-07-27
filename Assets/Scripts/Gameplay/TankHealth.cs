@@ -188,9 +188,12 @@ namespace TankBattle.Gameplay
                     _smoke.Stop(true, ParticleSystemStopBehavior.StopEmitting);
             }
 
-            // Local HUD bar.
+            // Local HUD bar + a bump you can feel when you get hit.
             if (IsOwner && HUDController.Instance != null)
+            {
                 HUDController.Instance.SetHealth(pct);
+                if (current < previous && current > 0) TankBattle.Utils.Haptics.Medium();
+            }
         }
 
         void OnDeadChanged(bool _, bool dead)
@@ -204,7 +207,15 @@ namespace TankBattle.Gameplay
                 if (_explosion != null) _explosion.Play();
                 if (_smoke != null) _smoke.Stop(true, ParticleSystemStopBehavior.StopEmitting);
                 AudioManager.Instance?.PlayExplosionAt(transform.position);
-                TankBattle.Utils.CameraFollow.Instance?.ShakeAt(transform.position, 0.7f);
+                TankBattle.Utils.CameraFollow.Instance?.ShakeAt(transform.position, 0.9f);
+
+                // The full wreck: turret blown clear, hull slumps, scorch mark,
+                // smoke column. Runs locally on every client off this flag.
+                int colorIndex = _controller != null ? _controller.ColorIndex.Value : 0;
+                TankBattle.Utils.WreckEffect.Spawn(transform,
+                    GameConstants.GetPlayerColor(colorIndex));
+
+                if (IsOwner) TankBattle.Utils.Haptics.Heavy();
             }
 
             if (IsOwner && HUDController.Instance != null)

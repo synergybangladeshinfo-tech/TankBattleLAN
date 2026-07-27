@@ -127,9 +127,11 @@ namespace TankBattle.Gameplay
             // Late scene load on joiners: keep trying until camera + HUD exist.
             if (!_localBound) TryBindLocal();
 
-            // Frozen while dead or after the match has ended.
+            // Frozen while dead, during the countdown, or after the match ends.
+            var match = MatchManager.Instance;
             bool frozen = (_health != null && _health.IsDead.Value) ||
-                          (MatchManager.Instance != null && MatchManager.Instance.MatchEnded.Value);
+                          (match != null && match.MatchEnded.Value) ||
+                          (match != null && !match.RoundLive);   // 3-2-1 countdown
 
             Vector2 input = frozen ? Vector2.zero : ReadInput();
 

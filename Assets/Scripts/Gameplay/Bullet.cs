@@ -25,6 +25,8 @@ namespace TankBattle.Gameplay
         int _shooterTeam = -1;
         WeaponDef _def;
         float _dieAt;
+        Vector3 _hitPoint, _hitNormal = Vector3.up;   // surface we struck, for FX
+        Color _visualColor = Color.white;              // set on every peer at spawn
 
         /// <summary>Server: remember who fired for kill credit / team filtering.</summary>
         public void Init(ulong shooterId, int weaponIndex, int shooterTeam)
@@ -48,6 +50,8 @@ namespace TankBattle.Gameplay
                 var mr = visual.GetComponent<MeshRenderer>();
                 if (mr != null) mr.material.color = def.BulletColor;
             }
+            _visualColor = def.BulletColor;
+
             var trail = GetComponentInChildren<TrailRenderer>();
             if (trail != null)
             {
@@ -86,12 +90,18 @@ namespace TankBattle.Gameplay
                     else if (IsTeammate(health)) { }
                     else
                     {
+                        _hitPoint = hit.point; _hitNormal = hit.normal;
                         Explode(health);
                         return;
                     }
                 }
                 else
                 {
+                    // Shootable prop (crate / fuel barrel) or plain scenery.
+                    var prop = hit.collider.GetComponentInParent<Destructible>();
+                    if (prop != null) prop.TakeDamage(_def.Damage, _shooterId);
+
+                    _hitPoint = hit.point; _hitNormal = hit.normal;
                     Explode(null); // wall / obstacle
                     return;
                 }
@@ -133,7 +143,24 @@ namespace TankBattle.Gameplay
                 }
             }
 
+            // Blasts shatter nearby props as well as tanks.
+            if (_def.SplashRadius > 0f)
+                Destructible.DamageInRadius(transform.position, _def.SplashRadius,
+                                            _def.Damage, _shooterId);
+
+            // Tell every client where to draw the mark before we disappear.
+            Vector3 fxPoint = _hitPoint == Vector3.zero ? transform.position : _hitPoint;
+            ImpactClientRpc(fxPoint, _hitNormal, _def.SplashRadius);
+
             if (IsSpawned) GetComponent<NetworkObject>().Despawn();
+        }
+
+        /// <summary>Every client draws the scorch mark, sparks and dust locally.</summary>
+        [ClientRpc]
+        void ImpactClientRpc(Vector3 point, Vector3 normal, float splash)
+        {
+            if (splash > 0f) TankBattle.Utils.ImpactFx.Explosion(point, splash);
+            else TankBattle.Utils.ImpactFx.BulletHit(point, normal, _visualColor);
         }
     }
 }

@@ -60,6 +60,17 @@ namespace TankBattle.Gameplay
         /// <summary>True once the match is decided (timer or instant win).</summary>
         public NetworkVariable<bool> MatchEnded = new NetworkVariable<bool>(false);
 
+        /// <summary>
+        /// Seconds left on the "3 - 2 - 1 - FIGHT" countdown. Tanks are frozen
+        /// and the clock is paused while this is above zero, so nobody gets a
+        /// head start just because their phone finished loading first.
+        /// </summary>
+        public NetworkVariable<float> Countdown =
+            new NetworkVariable<float>(GameConstants.StartCountdown);
+
+        /// <summary>False during the countdown - gameplay is frozen.</summary>
+        public bool RoundLive => Countdown.Value <= 0f;
+
         /// <summary>Active game mode (cast to GameMode). Set by the server at spawn.</summary>
         public NetworkVariable<int> Mode = new NetworkVariable<int>(0);
 
@@ -139,6 +150,13 @@ namespace TankBattle.Gameplay
         void Update()
         {
             if (!IsServer || !IsSpawned || MatchEnded.Value) return;
+
+            // Freeze everything until the countdown finishes.
+            if (Countdown.Value > 0f)
+            {
+                Countdown.Value = Mathf.Max(0f, Countdown.Value - Time.deltaTime);
+                return;
+            }
 
             TimeRemaining.Value = Mathf.Max(0f, TimeRemaining.Value - Time.deltaTime);
             if (TimeRemaining.Value <= 0f) { MatchEnded.Value = true; return; }
@@ -305,6 +323,9 @@ namespace TankBattle.Gameplay
             KillFeedClientRpc(new FixedString32Bytes(killerName),
                               new FixedString32Bytes(victimName));
 
+            // Show the victim who got them.
+            SendDeathCam(killerId, victimId);
+
             // The victim's streak ends; the killer's grows.
             _streaks[victimId] = 0;
             if (killerId != victimId)
@@ -397,6 +418,67 @@ namespace TankBattle.Gameplay
             // Only the player on the streak gets the big screen banner.
             bool mine = NameOf(NetworkManager.Singleton.LocalClientId) == name;
             if (mine) hud.Feed.ShowBanner($"{text}!", new Color(1f, 0.8f, 0.25f), 2.2f);
+        }
+
+        // ------------------------------------------------------- quick chat
+
+        /// <summary>Any client asks the server to broadcast a canned phrase.</summary>
+        [ServerRpc(RequireOwnership = false)]
+        public void QuickChatServerRpc(int phraseIndex, ServerRpcParams p = default)
+        {
+            if (phraseIndex < 0 || phraseIndex >= GameConstants.QuickChatPhrases.Length) return;
+            string who = NameOf(p.Receive.SenderClientId);
+            if (string.IsNullOrEmpty(who)) who = "Player";
+            QuickChatClientRpc(new FixedString32Bytes(who), phraseIndex);
+        }
+
+        [ClientRpc]
+        void QuickChatClientRpc(FixedString32Bytes who, int phraseIndex)
+        {
+            var hud = TankBattle.UI.HUDController.Instance;
+            if (hud == null || hud.Feed == null) return;
+            if (phraseIndex < 0 || phraseIndex >= GameConstants.QuickChatPhrases.Length) return;
+            hud.Feed.AddLine($"{who}: {GameConstants.QuickChatPhrases[phraseIndex]}",
+                             new Color(0.55f, 0.85f, 1f));
+        }
+
+        // -------------------------------------------------------- death cam
+
+        /// <summary>
+        /// Server: tell the victim's client to look at whoever killed them for a
+        /// couple of seconds. Cheap stand-in for a full kill-cam replay - you
+        /// still get to see who got you and from where.
+        /// </summary>
+        void SendDeathCam(ulong killerId, ulong victimId)
+        {
+            if (killerId == victimId) return;
+            if (victimId >= GameConstants.BotIdBase) return;   // bots have no camera
+
+            // Find the killer's tank so we can point the camera at it.
+            Transform killerTf = null;
+            for (int i = 0; i < TankHealth.All.Count; i++)
+            {
+                var h = TankHealth.All[i];
+                if (h != null && h.ActorId == killerId) { killerTf = h.transform; break; }
+            }
+            if (killerTf == null) return;
+
+            var no = killerTf.GetComponent<NetworkObject>();
+            if (no == null) return;
+
+            var target = new ClientRpcParams
+            {
+                Send = new ClientRpcSendParams { TargetClientIds = new[] { victimId } }
+            };
+            DeathCamClientRpc(new NetworkObjectReference(no), target);
+        }
+
+        [ClientRpc]
+        void DeathCamClientRpc(NetworkObjectReference killerRef, ClientRpcParams _ = default)
+        {
+            if (!killerRef.TryGet(out NetworkObject killer)) return;
+            TankBattle.Utils.CameraFollow.Instance?.WatchKiller(
+                killer.transform, GameConstants.DeathCamSeconds);
         }
 
         void SetScore(ulong actorId, int score)
