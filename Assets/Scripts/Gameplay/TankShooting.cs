@@ -59,6 +59,10 @@ namespace TankBattle.Gameplay
                 TankBattle.Utils.CameraFollow.Instance?.Shake(0.14f);
             }
 
+            // Sniper: pull the camera back while you are lining a shot up, so the
+            // extra range is actually usable. Any other weapon snaps back.
+            UpdateZoom();
+
             if (!FirePressed() || Time.time < _nextLocalFire) return;
 
             _nextLocalFire = Time.time + Weapons.Get(Weapon.Value).FireInterval;
@@ -67,7 +71,21 @@ namespace TankBattle.Gameplay
             // Punchy recoil kick on the local camera.
             var def = Weapons.Get(Weapon.Value);
             float kick = def.SplashRadius > 0f ? 0.32f : 0.12f; // rockets kick harder
+            if (Weapons.HasZoom(Weapon.Value)) kick = 0.40f;    // sniper really thumps
+            else if (Weapons.IsShortRange(Weapon.Value)) kick = 0.03f; // flamer just rumbles
             TankBattle.Utils.CameraFollow.Instance?.Shake(kick);
+        }
+
+        /// <summary>Owner: ease the chase camera out while sniping.</summary>
+        void UpdateZoom()
+        {
+            var cam = TankBattle.Utils.CameraFollow.Instance;
+            if (cam == null) return;
+
+            bool aiming = HUDController.Instance != null &&
+                          HUDController.Instance.AimDirection.sqrMagnitude > 0.04f;
+            float target = Weapons.HasZoom(Weapon.Value) && aiming ? 1.65f : 1f;
+            cam.SetZoom(target);
         }
 
         bool FirePressed()
@@ -121,6 +139,15 @@ namespace TankBattle.Gameplay
             if (prefab == null) return;
 
             int weaponIndex = Weapon.Value;
+
+            // A bot holding mines plants them instead of shooting nothing.
+            if (Weapons.IsDeployable(weaponIndex))
+            {
+                DeployMine(actorId, team);
+                FiredClientRpc(weaponIndex);
+                return;
+            }
+
             Quaternion rot = muzzle.rotation * Quaternion.Euler(0f, yawErrorDeg, 0f);
             SpawnBullets(prefab, weaponIndex, rot, actorId, team);
             FiredClientRpc(weaponIndex);
@@ -156,9 +183,31 @@ namespace TankBattle.Gameplay
             int shooterTeam = MatchManager.Instance != null
                 ? MatchManager.Instance.GetTeam(actorId) : -1;
 
+            // Mines are placed on the ground behind the tank, not fired.
+            if (Weapons.IsDeployable(weaponIndex))
+            {
+                DeployMine(actorId, shooterTeam);
+                FiredClientRpc(weaponIndex);
+                return;
+            }
+
             Quaternion baseRot = AimAssist(muzzle.rotation, actorId, shooterTeam);
             SpawnBullets(prefab, weaponIndex, baseRot, actorId, shooterTeam);
             FiredClientRpc(weaponIndex);
+        }
+
+        /// <summary>Server: drop a proximity mine just under the tank.</summary>
+        void DeployMine(ulong actorId, int team)
+        {
+            var prefab = ConnectionManager.Instance != null
+                ? ConnectionManager.Instance.MinePrefab : null;
+            if (prefab == null) return;
+
+            Vector3 pos = transform.position - transform.forward * 1.6f + Vector3.up * 0.25f;
+            GameObject go = Instantiate(prefab, pos, Quaternion.identity);
+            var mine = go.GetComponent<Mine>();
+            if (mine != null) mine.Init(actorId, team);
+            go.GetComponent<NetworkObject>().Spawn(true);
         }
 
         /// <summary>Server: spawn the projectile(s) for one trigger pull.</summary>

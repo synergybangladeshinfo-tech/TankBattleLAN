@@ -45,6 +45,13 @@ namespace TankBattle.Gameplay
         float _dashUntil, _dashReadyAt;   // boost/dash timing
         bool _rammedThisDash;             // one ram hit per dash
 
+        float _hoverFuel = GameConstants.HoverFuelMax;  // seconds of lift left
+        float _groundY;                                 // height we last stood at
+        bool _hovering;
+
+        /// <summary>Hover fuel as 0..1 for the HUD bar.</summary>
+        public float HoverFuel01 => Mathf.Clamp01(_hoverFuel / GameConstants.HoverFuelMax);
+
         void Awake()
         {
             _cc = GetComponent<CharacterController>();
@@ -151,9 +158,41 @@ namespace TankBattle.Gameplay
             // Ramming: dashing into an enemy deals melee damage (once per dash).
             if (dashing && !_rammedThisDash) TryRam();
 
-            // Simple gravity so tanks stick to ramps and the ground.
-            if (_cc.isGrounded) _verticalVelocity = -1f;
-            else _verticalVelocity -= gravity * Time.deltaTime;
+            // ---- hover / jetpack ----
+            // Holding HOVER burns fuel and lifts the tank up to a fixed height
+            // above the ground it took off from; letting go drops it back down.
+            if (_cc.isGrounded)
+            {
+                _groundY = transform.position.y;
+                if (!_hovering) _hoverFuel = Mathf.Min(GameConstants.HoverFuelMax,
+                    _hoverFuel + GameConstants.HoverFuelRegen * Time.deltaTime);
+            }
+
+            bool wantHover = !frozen && HUDController.Instance != null &&
+                             HUDController.Instance.HoverHeld;
+            // Need a minimum reserve to start, then you may burn it all.
+            if (wantHover && !_hovering && _hoverFuel < GameConstants.HoverFuelMinToStart)
+                wantHover = false;
+
+            float ceiling = _groundY + GameConstants.HoverMaxRise;
+            _hovering = wantHover && _hoverFuel > 0f && transform.position.y < ceiling;
+
+            if (_hovering)
+            {
+                _hoverFuel = Mathf.Max(0f, _hoverFuel - Time.deltaTime);
+                _verticalVelocity = GameConstants.HoverThrust;
+            }
+            else
+            {
+                // Simple gravity so tanks stick to ramps and the ground.
+                if (_cc.isGrounded) _verticalVelocity = -1f;
+                else _verticalVelocity -= gravity * Time.deltaTime;
+
+                // Refuel slowly even in the air so you are never fully stranded.
+                if (!_cc.isGrounded)
+                    _hoverFuel = Mathf.Min(GameConstants.HoverFuelMax,
+                        _hoverFuel + GameConstants.HoverFuelRegen * 0.35f * Time.deltaTime);
+            }
             motion.y = _verticalVelocity;
 
             _cc.Move(motion * Time.deltaTime);

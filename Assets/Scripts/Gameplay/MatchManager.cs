@@ -78,6 +78,9 @@ namespace TankBattle.Gameplay
         bool _pickupsSpawned, _botsSpawned;
         readonly Dictionary<ulong, float> _kothAccum = new Dictionary<ulong, float>();
 
+        /// <summary>Server: current kill streak per actor (reset when they die).</summary>
+        readonly Dictionary<ulong, int> _streaks = new Dictionary<ulong, int>();
+
         void Awake()
         {
             Instance = this;
@@ -296,6 +299,29 @@ namespace TankBattle.Gameplay
         {
             if (!IsServer || MatchEnded.Value) return;
 
+            // --- kill feed + streaks (broadcast to everyone) ---
+            string killerName = NameOf(killerId);
+            string victimName = NameOf(victimId);
+            KillFeedClientRpc(new FixedString32Bytes(killerName),
+                              new FixedString32Bytes(victimName));
+
+            // The victim's streak ends; the killer's grows.
+            _streaks[victimId] = 0;
+            if (killerId != victimId)
+            {
+                _streaks.TryGetValue(killerId, out int streak);
+                streak++;
+                _streaks[killerId] = streak;
+
+                for (int m = 0; m < GameConstants.StreakMilestones.Length; m++)
+                {
+                    if (streak != GameConstants.StreakMilestones[m]) continue;
+                    StreakClientRpc(new FixedString32Bytes(killerName),
+                                    new FixedString32Bytes(GameConstants.StreakTitles[m]));
+                    break;
+                }
+            }
+
             int killerKills = 0, killerTeam = -1;
             for (int i = 0; i < Scores.Count; i++)
             {
@@ -340,6 +366,37 @@ namespace TankBattle.Gameplay
                     CheckLastTankVictory();
                     break;
             }
+        }
+
+        /// <summary>Scoreboard name for an actor (works for players and bots).</summary>
+        string NameOf(ulong actorId)
+        {
+            for (int i = 0; i < Scores.Count; i++)
+                if (Scores[i].ClientId == actorId) return Scores[i].Name.ToString();
+            return "";
+        }
+
+        [ClientRpc]
+        void KillFeedClientRpc(FixedString32Bytes killer, FixedString32Bytes victim)
+        {
+            var hud = TankBattle.UI.HUDController.Instance;
+            if (hud != null && hud.Feed != null)
+                hud.Feed.AddKill(killer.ToString(), victim.ToString(), null);
+        }
+
+        [ClientRpc]
+        void StreakClientRpc(FixedString32Bytes who, FixedString32Bytes title)
+        {
+            var hud = TankBattle.UI.HUDController.Instance;
+            if (hud == null || hud.Feed == null) return;
+
+            string name = who.ToString();
+            string text = title.ToString();
+            hud.Feed.AddLine($"{name}  -  {text}!", new Color(1f, 0.8f, 0.25f));
+
+            // Only the player on the streak gets the big screen banner.
+            bool mine = NameOf(NetworkManager.Singleton.LocalClientId) == name;
+            if (mine) hud.Feed.ShowBanner($"{text}!", new Color(1f, 0.8f, 0.25f), 2.2f);
         }
 
         void SetScore(ulong actorId, int score)
