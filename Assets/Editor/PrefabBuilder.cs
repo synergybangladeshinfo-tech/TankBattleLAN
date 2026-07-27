@@ -184,6 +184,14 @@ namespace TankBattle.EditorTools
                 nt.RotAngleThreshold = 0.5f;
 
                 root.AddComponent<TankController>();
+
+                // Engine rumble + rolling wheels: both measure the tank's real
+
+                // replicated motion, so they work for players, remotes and bots.
+
+                root.AddComponent<TankBattle.Audio.TankEngineAudio>();
+
+                root.AddComponent<TrackAnimator>();
                 root.AddComponent<TurretAim>();   // rotates the TurretPivot
                 var health = root.AddComponent<TankHealth>();
                 health.healthBarFill = fill.transform;
@@ -232,6 +240,8 @@ namespace TankBattle.EditorTools
             return hull;
         }
 
+
+
         /// <summary>
         /// Shared rotating turret (cannon) on a pivot at the tank root, so it can
         /// yaw independently of the hull. Returns the muzzle transform (bullet
@@ -260,58 +270,195 @@ namespace TankBattle.EditorTools
             return muzzle;
         }
 
-        // Hulls carry the body + tracks + style flavour only; the turret is a
-        // separate rotating pivot built by BuildTurret (shared across styles).
+        /// <summary>
+        /// Shared running gear: a row of road wheels plus a drive sprocket and
+        /// idler at each end, mudguards and the track surface itself.
+        /// TrackAnimator finds these by name ("Wheel*", "Sprocket*", "Idler*",
+        /// "Track*") and spins/scrolls them from the tank's real movement, so a
+        /// driving tank actually looks driven instead of sliding.
+        /// </summary>
+        static void BuildRunningGear(GameObject h, Material dark, Material metal,
+                                     float halfWidth, float length, float wheelR,
+                                     int wheelCount, float trackHeight)
+        {
+            for (int side = 0; side < 2; side++)
+            {
+                float sx = side == 0 ? -halfWidth : halfWidth;
+                string tag = side == 0 ? "L" : "R";
+
+                // Track surface: a thin slab either side. Its material is
+                // instanced per tank so the UV scroll is independent.
+                AddPart(h, PrimitiveType.Cube, "Track" + tag,
+                    new Vector3(sx, trackHeight, 0f),
+                    new Vector3(0.30f, wheelR * 2.05f, length), dark);
+
+                // Road wheels between the sprocket and idler.
+                float span = length * 0.5f - wheelR * 1.15f;
+                for (int i = 0; i < wheelCount; i++)
+                {
+                    float t = wheelCount == 1 ? 0.5f : i / (float)(wheelCount - 1);
+                    float z = Mathf.Lerp(-span, span, t);
+                    var w = AddPart(h, PrimitiveType.Cylinder, "Wheel" + tag + i,
+                        new Vector3(sx, wheelR, z),
+                        new Vector3(wheelR * 1.85f, 0.09f, wheelR * 1.85f), metal);
+                    // Lay the cylinder on its side so it rolls around local X.
+                    w.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+                }
+
+                // Drive sprocket (rear) and idler (front) sit slightly higher.
+                var spr = AddPart(h, PrimitiveType.Cylinder, "Sprocket" + tag,
+                    new Vector3(sx, wheelR * 1.15f, -length * 0.5f + wheelR * 0.9f),
+                    new Vector3(wheelR * 2.1f, 0.10f, wheelR * 2.1f), metal);
+                spr.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+
+                var idl = AddPart(h, PrimitiveType.Cylinder, "Idler" + tag,
+                    new Vector3(sx, wheelR * 1.15f, length * 0.5f - wheelR * 0.9f),
+                    new Vector3(wheelR * 1.95f, 0.10f, wheelR * 1.95f), metal);
+                idl.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+
+                // Mudguard over the top run of the track.
+                AddPart(h, PrimitiveType.Cube, "Fender" + tag,
+                    new Vector3(sx, wheelR * 2.15f, 0f),
+                    new Vector3(0.42f, 0.07f, length * 0.98f), dark);
+            }
+        }
+
+        /// <summary>
+        /// Stowage boxes, tow hooks and an exhaust - the small clutter that makes
+        /// a box read as a real fighting vehicle.
+        /// </summary>
+        static void AddStowage(GameObject h, Material metal,
+                               float halfWidth, float deckY, float rearZ)
+        {
+            AddPart(h, PrimitiveType.Cube, "StowageL",
+                new Vector3(-halfWidth * 0.78f, deckY + 0.10f, rearZ + 0.32f),
+                new Vector3(0.34f, 0.20f, 0.55f), metal);
+            AddPart(h, PrimitiveType.Cube, "StowageR",
+                new Vector3(halfWidth * 0.78f, deckY + 0.10f, rearZ + 0.32f),
+                new Vector3(0.34f, 0.20f, 0.55f), metal);
+
+            var ex = AddPart(h, PrimitiveType.Cylinder, "ExhaustPipe",
+                new Vector3(halfWidth * 0.55f, deckY + 0.16f, rearZ + 0.05f),
+                new Vector3(0.13f, 0.22f, 0.13f), metal);
+            ex.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+
+            AddPart(h, PrimitiveType.Cube, "TowHookL",
+                new Vector3(-halfWidth * 0.45f, deckY - 0.28f, rearZ - 0.30f),
+                new Vector3(0.14f, 0.12f, 0.18f), metal);
+            AddPart(h, PrimitiveType.Cube, "TowHookR",
+                new Vector3(halfWidth * 0.45f, deckY - 0.28f, rearZ - 0.30f),
+                new Vector3(0.14f, 0.12f, 0.18f), metal);
+        }
 
         /// <summary>Style 0 - STANDARD: the classic balanced silhouette.</summary>
         static void BuildStandardHull(GameObject h, Material hull, Material dark, Material metal)
         {
+            // Lower hull tub.
             AddPart(h, PrimitiveType.Cube, "Body",
-                new Vector3(0f, 0.55f, 0f), new Vector3(1.5f, 0.55f, 2.1f), hull);
-            AddPart(h, PrimitiveType.Cube, "TrackL",
-                new Vector3(-0.85f, 0.35f, 0f), new Vector3(0.4f, 0.5f, 2.3f), dark);
-            AddPart(h, PrimitiveType.Cube, "TrackR",
-                new Vector3(0.85f, 0.35f, 0f), new Vector3(0.4f, 0.5f, 2.3f), dark);
-            AddPart(h, PrimitiveType.Cube, "GlacisPlate",
-                new Vector3(0f, 0.5f, 1.05f), new Vector3(1.4f, 0.4f, 0.35f), hull);
+                new Vector3(0f, 0.55f, 0f), new Vector3(1.45f, 0.50f, 2.15f), hull);
+
+            // Sloped glacis at the front - the classic tank silhouette cue.
+            var glacis = AddPart(h, PrimitiveType.Cube, "Glacis",
+                new Vector3(0f, 0.68f, 1.12f), new Vector3(1.42f, 0.55f, 0.20f), hull);
+            glacis.transform.localRotation = Quaternion.Euler(-38f, 0f, 0f);
+
+            // Upper deck.
+            AddPart(h, PrimitiveType.Cube, "Deck",
+                new Vector3(0f, 0.83f, -0.05f), new Vector3(1.30f, 0.16f, 1.95f), hull);
+
+            // Rear plate, angled the other way.
+            var rear = AddPart(h, PrimitiveType.Cube, "RearPlate",
+                new Vector3(0f, 0.66f, -1.10f), new Vector3(1.35f, 0.48f, 0.18f), hull);
+            rear.transform.localRotation = Quaternion.Euler(22f, 0f, 0f);
+
+            // Driver's periscope + headlights.
+            AddPart(h, PrimitiveType.Cube, "Periscope",
+                new Vector3(-0.35f, 0.94f, 0.72f), new Vector3(0.22f, 0.10f, 0.14f), metal);
+            var hlL = AddPart(h, PrimitiveType.Cylinder, "HeadlightL",
+                new Vector3(-0.52f, 0.90f, 1.03f), new Vector3(0.15f, 0.04f, 0.15f), metal);
+            hlL.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            var hlR = AddPart(h, PrimitiveType.Cylinder, "HeadlightR",
+                new Vector3(0.52f, 0.90f, 1.03f), new Vector3(0.15f, 0.04f, 0.15f), metal);
+            hlR.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+
+            BuildRunningGear(h, dark, metal, 0.85f, 2.35f, 0.24f, 5, 0.30f);
+            AddStowage(h, metal, 0.85f, 0.83f, -0.75f);
         }
 
-        /// <summary>Style 1 - HEAVY: wide armored brute with twin exhausts.</summary>
+        /// <summary>Style 1 - HEAVY: wide, slab-sided, obviously armoured.</summary>
         static void BuildHeavyHull(GameObject h, Material hull, Material dark, Material metal)
         {
             AddPart(h, PrimitiveType.Cube, "Body",
-                new Vector3(0f, 0.58f, 0f), new Vector3(1.8f, 0.65f, 2.2f), hull);
-            AddPart(h, PrimitiveType.Cube, "TrackL",
-                new Vector3(-1.0f, 0.38f, 0f), new Vector3(0.5f, 0.55f, 2.5f), dark);
-            AddPart(h, PrimitiveType.Cube, "TrackR",
-                new Vector3(1.0f, 0.38f, 0f), new Vector3(0.5f, 0.55f, 2.5f), dark);
-            AddPart(h, PrimitiveType.Cube, "ArmorL",
-                new Vector3(-1.0f, 0.75f, 0f), new Vector3(0.35f, 0.25f, 2.0f), hull);
-            AddPart(h, PrimitiveType.Cube, "ArmorR",
-                new Vector3(1.0f, 0.75f, 0f), new Vector3(0.35f, 0.25f, 2.0f), hull);
+                new Vector3(0f, 0.58f, 0f), new Vector3(1.75f, 0.62f, 2.25f), hull);
+
+            var glacis = AddPart(h, PrimitiveType.Cube, "Glacis",
+                new Vector3(0f, 0.74f, 1.16f), new Vector3(1.72f, 0.66f, 0.24f), hull);
+            glacis.transform.localRotation = Quaternion.Euler(-32f, 0f, 0f);
+
+            AddPart(h, PrimitiveType.Cube, "Deck",
+                new Vector3(0f, 0.92f, -0.05f), new Vector3(1.58f, 0.18f, 2.05f), hull);
+
+            // Bolt-on side skirts - the visual signature of the heavy.
+            AddPart(h, PrimitiveType.Cube, "SkirtL",
+                new Vector3(-1.02f, 0.80f, 0f), new Vector3(0.16f, 0.42f, 2.10f), hull);
+            AddPart(h, PrimitiveType.Cube, "SkirtR",
+                new Vector3(1.02f, 0.80f, 0f), new Vector3(0.16f, 0.42f, 2.10f), hull);
+
+            // Spare track links bolted to the nose as extra armour.
+            for (int i = 0; i < 3; i++)
+                AddPart(h, PrimitiveType.Cube, "SpareLink" + i,
+                    new Vector3(-0.38f + i * 0.38f, 0.60f, 1.28f),
+                    new Vector3(0.30f, 0.16f, 0.10f), metal);
+
+            var rear = AddPart(h, PrimitiveType.Cube, "RearPlate",
+                new Vector3(0f, 0.70f, -1.16f), new Vector3(1.68f, 0.55f, 0.20f), hull);
+            rear.transform.localRotation = Quaternion.Euler(18f, 0f, 0f);
+
             var ex1 = AddPart(h, PrimitiveType.Cylinder, "ExhaustL",
-                new Vector3(-0.5f, 1.0f, -1.05f), new Vector3(0.12f, 0.2f, 0.12f), metal);
+                new Vector3(-0.55f, 1.04f, -1.02f), new Vector3(0.14f, 0.22f, 0.14f), metal);
             ex1.transform.localRotation = Quaternion.Euler(20f, 0f, 0f);
             var ex2 = AddPart(h, PrimitiveType.Cylinder, "ExhaustR",
-                new Vector3(0.5f, 1.0f, -1.05f), new Vector3(0.12f, 0.2f, 0.12f), metal);
+                new Vector3(0.55f, 1.04f, -1.02f), new Vector3(0.14f, 0.22f, 0.14f), metal);
             ex2.transform.localRotation = Quaternion.Euler(20f, 0f, 0f);
+
+            BuildRunningGear(h, dark, metal, 1.00f, 2.55f, 0.27f, 6, 0.32f);
+            AddStowage(h, metal, 1.00f, 0.92f, -0.80f);
         }
 
-        /// <summary>Style 2 - SCOUT: slim, angular and fast-looking.</summary>
+        /// <summary>Style 2 - SCOUT: low, narrow and wedge-nosed.</summary>
         static void BuildScoutHull(GameObject h, Material hull, Material dark, Material metal)
         {
             AddPart(h, PrimitiveType.Cube, "Body",
-                new Vector3(0f, 0.52f, -0.1f), new Vector3(1.2f, 0.45f, 1.9f), hull);
+                new Vector3(0f, 0.50f, -0.10f), new Vector3(1.15f, 0.40f, 1.95f), hull);
+
             var nose = AddPart(h, PrimitiveType.Cube, "Nose",
-                new Vector3(0f, 0.62f, 1.0f), new Vector3(1.0f, 0.35f, 0.7f), hull);
-            nose.transform.localRotation = Quaternion.Euler(-18f, 0f, 0f);
-            AddPart(h, PrimitiveType.Cube, "TrackL",
-                new Vector3(-0.7f, 0.33f, 0f), new Vector3(0.32f, 0.45f, 2.2f), dark);
-            AddPart(h, PrimitiveType.Cube, "TrackR",
-                new Vector3(0.7f, 0.33f, 0f), new Vector3(0.32f, 0.45f, 2.2f), dark);
+                new Vector3(0f, 0.60f, 1.00f), new Vector3(1.05f, 0.34f, 0.75f), hull);
+            nose.transform.localRotation = Quaternion.Euler(-24f, 0f, 0f);
+
+            AddPart(h, PrimitiveType.Cube, "Deck",
+                new Vector3(0f, 0.72f, -0.15f), new Vector3(1.02f, 0.14f, 1.75f), hull);
+
+            // Angled cheeks give it a fast, faceted look.
+            var cheekL = AddPart(h, PrimitiveType.Cube, "CheekL",
+                new Vector3(-0.56f, 0.62f, 0.30f), new Vector3(0.16f, 0.34f, 1.30f), hull);
+            cheekL.transform.localRotation = Quaternion.Euler(0f, 0f, 22f);
+            var cheekR = AddPart(h, PrimitiveType.Cube, "CheekR",
+                new Vector3(0.56f, 0.62f, 0.30f), new Vector3(0.16f, 0.34f, 1.30f), hull);
+            cheekR.transform.localRotation = Quaternion.Euler(0f, 0f, -22f);
+
             var antenna = AddPart(h, PrimitiveType.Cylinder, "Antenna",
-                new Vector3(-0.35f, 1.05f, -0.6f), new Vector3(0.03f, 0.45f, 0.03f), metal);
+                new Vector3(-0.34f, 1.00f, -0.62f), new Vector3(0.03f, 0.48f, 0.03f), metal);
             antenna.transform.localRotation = Quaternion.Euler(0f, 0f, 8f);
+
+            var hlL = AddPart(h, PrimitiveType.Cylinder, "HeadlightL",
+                new Vector3(-0.40f, 0.80f, 1.24f), new Vector3(0.13f, 0.04f, 0.13f), metal);
+            hlL.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            var hlR = AddPart(h, PrimitiveType.Cylinder, "HeadlightR",
+                new Vector3(0.40f, 0.80f, 1.24f), new Vector3(0.13f, 0.04f, 0.13f), metal);
+            hlR.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+
+            BuildRunningGear(h, dark, metal, 0.70f, 2.20f, 0.21f, 4, 0.26f);
+            AddStowage(h, metal, 0.70f, 0.72f, -0.70f);
         }
 
         // --------------------------------------------------------------- bullet
