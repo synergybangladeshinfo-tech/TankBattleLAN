@@ -6,20 +6,35 @@ namespace TankBattle.Audio
     /// <summary>
     /// Music + SFX player with fully PROCEDURAL audio: every clip is synthesized
     /// at startup (layered waves and filtered noise), so the project ships zero
-    /// audio assets yet still has background music and rich effects - including
-    /// a distinct sound per weapon, pickups, countdown ticks and a two-layer
-    /// explosion (low boom + crackle).
-    /// Replace any clip with real assets later by assigning the fields.
-    /// Persists across scenes; respects the sound settings.
+    /// audio assets yet still has music and punchy effects - a distinct sound per
+    /// weapon, pickups, countdown ticks and a two-layer explosion.
+    ///
+    /// Playback uses a small pool of 2D AudioSources with MANUAL distance
+    /// attenuation and stereo panning instead of Unity's 3D rolloff. That matters:
+    /// the chase camera sits ~9 m behind the tank, and Unity's default logarithmic
+    /// 3D rolloff made your own gunfire almost silent on a phone speaker. Doing the
+    /// falloff by hand keeps your own shots loud and punchy while distant fire
+    /// still fades out naturally.
     /// </summary>
     public class AudioManager : MonoBehaviour
     {
         public static AudioManager Instance { get; private set; }
 
-        const int SampleRate = 22050;
+        /// <summary>44.1 kHz: 22 kHz made every effect sound muffled and cheap.</summary>
+        const int SampleRate = 44100;
+
+        /// <summary>Beyond this many metres a sound is inaudible.</summary>
+        const float MaxAudibleDistance = 70f;
+
+        /// <summary>Sounds closer than this play at full volume (your own tank).</summary>
+        const float FullVolumeDistance = 14f;
+
+        const int SfxVoices = 14;
 
         AudioSource _musicSource;
         AudioSource _uiSource;
+        AudioSource[] _sfxPool;
+        int _nextVoice;
 
         AudioClip _menuMusic, _battleMusic;
         AudioClip _hit, _explosion, _click, _victory, _pickup, _tick;
@@ -34,12 +49,27 @@ namespace TankBattle.Audio
             _musicSource = gameObject.AddComponent<AudioSource>();
             _musicSource.loop = true;
             _musicSource.playOnAwake = false;
-            _musicSource.volume = 0.35f;
+            _musicSource.volume = 0.28f;   // sits under the effects
+            _musicSource.spatialBlend = 0f;
 
             _uiSource = gameObject.AddComponent<AudioSource>();
             _uiSource.playOnAwake = false;
+            _uiSource.spatialBlend = 0f;
+
+            // Voice pool: plain 2D sources we drive ourselves.
+            _sfxPool = new AudioSource[SfxVoices];
+            for (int i = 0; i < SfxVoices; i++)
+            {
+                var src = gameObject.AddComponent<AudioSource>();
+                src.playOnAwake = false;
+                src.loop = false;
+                src.spatialBlend = 0f;      // 2D - we do the falloff manually
+                src.dopplerLevel = 0f;
+                _sfxPool[i] = src;
+            }
 
             GenerateClips();
+            LoadRealMusic();
             SettingsManager.OnChanged += ApplySettings;
             ApplySettings();
         }
@@ -65,26 +95,36 @@ namespace TankBattle.Audio
 
         void PlayMusic(AudioClip clip)
         {
+            if (clip == null) return;
             if (_musicSource.clip == clip && _musicSource.isPlaying) return;
+
+            // Real recordings are already mastered loud; the synthesized loops
+            // are quiet by design, so each gets its own level.
+            bool real = clip == _menuMusic ? _menuIsReal
+                      : clip == _battleMusic ? _battleIsReal : false;
+            _musicSource.volume = real ? 0.42f : 0.28f;
+
             _musicSource.clip = clip;
             _musicSource.Play();
         }
 
-        public void PlayClick() => PlayUi(_click, 0.5f);
-        public void PlayVictory() => PlayUi(_victory, 0.8f);
-        public void PlayCountdownTick() => PlayUi(_tick, 0.6f);
+        public void PlayClick() => PlayUi(_click, 0.55f);
+        public void PlayVictory() => PlayUi(_victory, 0.85f);
+        public void PlayCountdownTick() => PlayUi(_tick, 0.7f);
 
         /// <summary>Weapon-specific firing sound at a world position.</summary>
         public void PlayShootAt(Vector3 pos, int weaponIndex = 0)
         {
             if (_shots == null || _shots.Length == 0) return;
             if (weaponIndex < 0 || weaponIndex >= _shots.Length) weaponIndex = 0;
-            PlayWorld(_shots[weaponIndex], pos, 0.7f);
+
+            // Slight pitch variation stops repeated shots sounding like a machine.
+            PlayWorld(_shots[weaponIndex], pos, 1.0f, Random.Range(0.94f, 1.07f));
         }
 
-        public void PlayHitAt(Vector3 pos) => PlayWorld(_hit, pos, 0.6f);
-        public void PlayExplosionAt(Vector3 pos) => PlayWorld(_explosion, pos, 0.9f);
-        public void PlayPickupAt(Vector3 pos) => PlayWorld(_pickup, pos, 0.8f);
+        public void PlayHitAt(Vector3 pos) => PlayWorld(_hit, pos, 0.75f, Random.Range(0.9f, 1.1f));
+        public void PlayExplosionAt(Vector3 pos) => PlayWorld(_explosion, pos, 1.0f, Random.Range(0.9f, 1.05f));
+        public void PlayPickupAt(Vector3 pos) => PlayWorld(_pickup, pos, 0.85f);
 
         void PlayUi(AudioClip clip, float volume)
         {
@@ -92,64 +132,165 @@ namespace TankBattle.Audio
             _uiSource.PlayOneShot(clip, volume);
         }
 
-        void PlayWorld(AudioClip clip, Vector3 pos, float volume)
+        /// <summary>
+        /// Play a clip positioned in the world through the 2D voice pool, with
+        /// hand-rolled distance attenuation and stereo panning relative to the
+        /// listener (the player's camera).
+        /// </summary>
+        void PlayWorld(AudioClip clip, Vector3 pos, float volume, float pitch = 1f)
         {
-            if (!SettingsManager.SfxOn || clip == null) return;
-            // 2D-ish playback positioned in the world; cheap and predictable.
-            AudioSource.PlayClipAtPoint(clip, pos, volume);
+            if (!SettingsManager.SfxOn || clip == null || _sfxPool == null) return;
+
+            var cam = Camera.main;
+            float attenuation = 1f;
+            float pan = 0f;
+
+            if (cam != null)
+            {
+                Vector3 toSound = pos - cam.transform.position;
+                float dist = toSound.magnitude;
+                if (dist > MaxAudibleDistance) return;   // too far to bother
+
+                // Full volume up close, then a smooth curve out to silence.
+                attenuation = dist <= FullVolumeDistance
+                    ? 1f
+                    : 1f - Mathf.SmoothStep(0f, 1f,
+                        (dist - FullVolumeDistance) / (MaxAudibleDistance - FullVolumeDistance));
+
+                // Pan toward whichever side of the screen the sound came from.
+                pan = Mathf.Clamp(Vector3.Dot(toSound.normalized, cam.transform.right), -1f, 1f) * 0.75f;
+            }
+
+            var src = _sfxPool[_nextVoice];
+            _nextVoice = (_nextVoice + 1) % _sfxPool.Length;
+
+            src.Stop();
+            src.clip = clip;
+            src.pitch = pitch;
+            src.panStereo = pan;
+            src.volume = Mathf.Clamp01(volume * attenuation);
+            src.Play();
         }
+
+        // ----------------------------------------------------------- real music
+
+        /// <summary>
+        /// Replace the synthesized menu/battle loops with real tracks if any are
+        /// present in Assets/Resources/Music. Drop in "Menu.mp3" and/or
+        /// "Battle.mp3" and they are used automatically; if a file is missing the
+        /// generated chiptune loop stays, so the game always has music.
+        /// </summary>
+        void LoadRealMusic()
+        {
+            var menu = Resources.Load<AudioClip>("Music/Menu");
+            if (menu != null) { _menuMusic = menu; _menuIsReal = true; }
+
+            var battle = Resources.Load<AudioClip>("Music/Battle");
+            if (battle != null) { _battleMusic = battle; _battleIsReal = true; }
+        }
+
+        bool _menuIsReal, _battleIsReal;
 
         // ------------------------------------------------------------- synthesis
 
         void GenerateClips()
         {
-            _click = Synth("click", 0.06f, t =>
-                Mathf.Sin(2f * Mathf.PI * 1400f * t) * Mathf.Exp(-t * 60f));
+            _click = Synth("click", 0.05f, t =>
+                Mathf.Sin(2f * Mathf.PI * 1500f * t) * Mathf.Exp(-t * 70f));
 
-            _tick = Synth("tick", 0.09f, t =>
-                Mathf.Sin(2f * Mathf.PI * 1000f * t) * Mathf.Exp(-t * 40f));
+            _tick = Synth("tick", 0.08f, t =>
+                Mathf.Sin(2f * Mathf.PI * 1100f * t) * Mathf.Exp(-t * 45f));
 
-            // Per-weapon shots: [Cannon, MachineGun, Shotgun, Laser, Rocket].
-            _shots = new AudioClip[5];
+            // ---- weapon shots (index-aligned with WeaponType) ----
+            // Cannon, MachineGun, Shotgun, Laser, Rocket, Sniper, Flamethrower, Mine
+            _shots = new AudioClip[8];
 
-            _shots[0] = Synth("shotCannon", 0.25f, t =>       // classic thump
+            // 0 CANNON - hard transient, descending body, short tail. Big and dry.
+            _shots[0] = Norm(Synth("shotCannon", 0.34f, t =>
             {
-                float sweep = Mathf.Lerp(320f, 70f, t / 0.25f);
-                float square = Mathf.Sign(Mathf.Sin(2f * Mathf.PI * sweep * t));
-                float noise = (Random.value * 2f - 1f) * 0.6f;
-                return (square * 0.5f + noise * 0.5f) * Mathf.Exp(-t * 18f);
-            });
+                float crack = (Random.value * 2f - 1f) * Mathf.Exp(-t * 220f);       // click
+                float sweep = Mathf.Lerp(420f, 65f, Mathf.Clamp01(t / 0.20f));
+                float body = Mathf.Sin(2f * Mathf.PI * sweep * t) * Mathf.Exp(-t * 13f);
+                float tail = (Random.value * 2f - 1f) * Mathf.Exp(-t * 26f) * 0.45f;
+                return crack * 0.9f + body * 0.85f + tail;
+            }));
 
-            _shots[1] = Synth("shotMG", 0.09f, t =>           // short snappy tick
+            // 1 MACHINE GUN - very short, sharp, dry snap.
+            _shots[1] = Norm(Synth("shotMG", 0.10f, t =>
+            {
+                float crack = (Random.value * 2f - 1f) * Mathf.Exp(-t * 130f);
+                float body = Mathf.Sin(2f * Mathf.PI * 520f * t) * Mathf.Exp(-t * 60f);
+                return crack * 0.85f + body * 0.5f;
+            }));
+
+            // 2 SHOTGUN - wide low blast with a long noisy tail.
+            _shots[2] = Norm(SynthFiltered("shotShotgun", 0.40f, 0.30f, t =>
+            {
+                float blast = (Random.value * 2f - 1f) * Mathf.Exp(-t * 11f);
+                float thump = Mathf.Sin(2f * Mathf.PI * 95f * t) * Mathf.Exp(-t * 16f) * 0.7f;
+                return blast + thump;
+            }));
+
+            // 3 LASER - rising sci-fi zap with a metallic ring.
+            _shots[3] = Norm(Synth("shotLaser", 0.26f, t =>
+            {
+                float sweep = Mathf.Lerp(650f, 2100f, Mathf.Clamp01(t / 0.26f));
+                float main = Mathf.Sin(2f * Mathf.PI * sweep * t);
+                float ring = Mathf.Sin(2f * Mathf.PI * sweep * 1.5f * t) * 0.35f;
+                return (main + ring) * Mathf.Exp(-t * 12f);
+            }));
+
+            // 4 ROCKET - launch whoosh over a low thump.
+            _shots[4] = Norm(SynthFiltered("shotRocket", 0.55f, 0.16f, t =>
+            {
+                float swell = Mathf.Sin(Mathf.Clamp01(t / 0.55f) * Mathf.PI);
+                float whoosh = (Random.value * 2f - 1f) * swell;
+                float thump = Mathf.Sin(2f * Mathf.PI * 70f * t) * Mathf.Exp(-t * 9f) * 0.9f;
+                return whoosh + thump;
+            }));
+
+            // 5 SNIPER - brutal high crack plus a distant slap-back echo.
+            _shots[5] = Norm(Synth("shotSniper", 0.55f, t =>
+            {
+                float crack = (Random.value * 2f - 1f) * Mathf.Exp(-t * 150f);
+                float body = Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(900f, 120f,
+                    Mathf.Clamp01(t / 0.12f)) * t) * Mathf.Exp(-t * 20f);
+                // slap-back: a quieter copy ~150 ms later
+                float echo = 0f;
+                if (t > 0.15f)
+                {
+                    float et = t - 0.15f;
+                    echo = (Random.value * 2f - 1f) * Mathf.Exp(-et * 24f) * 0.35f;
+                }
+                return crack + body * 0.8f + echo;
+            }));
+
+            // 6 FLAMETHROWER - breathy filtered roar (fires very fast, so keep short).
+            _shots[6] = Norm(SynthFiltered("shotFlame", 0.16f, 0.35f, t =>
             {
                 float noise = (Random.value * 2f - 1f);
-                float tone = Mathf.Sin(2f * Mathf.PI * 480f * t);
-                return (noise * 0.6f + tone * 0.4f) * Mathf.Exp(-t * 55f);
-            });
+                float env = Mathf.Sin(Mathf.Clamp01(t / 0.16f) * Mathf.PI);
+                return noise * env * 0.8f;
+            }));
 
-            _shots[2] = SynthFiltered("shotShotgun", 0.30f, 0.25f, t => // wide boom
-                (Random.value * 2f - 1f) * Mathf.Exp(-t * 14f));
-
-            _shots[3] = Synth("shotLaser", 0.22f, t =>        // rising sci-fi zap
+            // 7 MINE - mechanical clunk as it is planted.
+            _shots[7] = Norm(Synth("shotMine", 0.20f, t =>
             {
-                float sweep = Mathf.Lerp(700f, 1900f, t / 0.22f);
-                return Mathf.Sin(2f * Mathf.PI * sweep * t) * Mathf.Exp(-t * 14f) * 0.8f;
-            });
+                float clunk = Mathf.Sin(2f * Mathf.PI * 180f * t) * Mathf.Exp(-t * 30f);
+                float click = (Random.value * 2f - 1f) * Mathf.Exp(-t * 180f) * 0.7f;
+                return clunk + click;
+            }));
 
-            _shots[4] = SynthFiltered("shotRocket", 0.5f, 0.12f, t =>   // whoosh
+            // Bullet impact: short metallic ping.
+            _hit = Norm(Synth("hit", 0.14f, t =>
             {
-                float noise = (Random.value * 2f - 1f);
-                float env = Mathf.Sin(Mathf.Clamp01(t / 0.5f) * Mathf.PI); // swell
-                return noise * env;
-            });
+                float ping = Mathf.Sin(2f * Mathf.PI * 950f * t) * Mathf.Exp(-t * 40f);
+                float tick = (Random.value * 2f - 1f) * Mathf.Exp(-t * 160f) * 0.5f;
+                return ping + tick;
+            }));
 
-            _hit = Synth("hit", 0.12f, t =>
-                Mathf.Sin(2f * Mathf.PI * 880f * t) * Mathf.Exp(-t * 45f));
-
-            // Explosion: low-passed rumble + a crackle layer on top.
-            _explosion = SynthLayered("explosion", 0.85f,
-                (t, prevLp) => 0f, // handled inside SynthLayered
-                0.06f);
+            // Explosion: deep rumble + crackle.
+            _explosion = Norm(SynthExplosion("explosion", 0.95f, 0.05f));
 
             _pickup = SynthMelody("pickup",
                 new float[] { 659.25f, 830.61f, 987.77f }, 0.07f, wave: 0);
@@ -170,6 +311,32 @@ namespace TankBattle.Audio
                 130.81f, 130.81f, 155.56f, 130.81f, 174.61f, 155.56f, 130.81f, 196.00f,
                 130.81f, 130.81f, 155.56f, 130.81f, 116.54f, 123.47f, 130.81f, 98.00f
             }, 0.19f, wave: 1);
+        }
+
+        /// <summary>
+        /// Normalise a clip so its loudest sample sits near full scale. Without
+        /// this the synthesized shots came out far quieter than the UI beeps.
+        /// </summary>
+        static AudioClip Norm(AudioClip clip, float target = 0.95f)
+        {
+            if (clip == null) return null;
+            var data = new float[clip.samples * clip.channels];
+            clip.GetData(data, 0);
+
+            float peak = 0f;
+            for (int i = 0; i < data.Length; i++)
+            {
+                float a = data[i] < 0f ? -data[i] : data[i];
+                if (a > peak) peak = a;
+            }
+            if (peak < 0.0001f) return clip;
+
+            float gain = target / peak;
+            for (int i = 0; i < data.Length; i++)
+                data[i] = Mathf.Clamp(data[i] * gain, -1f, 1f);
+
+            clip.SetData(data, 0);
+            return clip;
         }
 
         /// <summary>Create a clip from a time-domain generator function.</summary>
@@ -203,8 +370,7 @@ namespace TankBattle.Audio
         }
 
         /// <summary>Two-layer explosion: deep filtered boom + bright crackle.</summary>
-        static AudioClip SynthLayered(string name, float duration,
-            System.Func<float, float, float> _unused, float alpha)
+        static AudioClip SynthExplosion(string name, float duration, float alpha)
         {
             int samples = Mathf.CeilToInt(duration * SampleRate);
             var data = new float[samples];
@@ -214,16 +380,19 @@ namespace TankBattle.Audio
                 float t = i / (float)SampleRate;
 
                 // Layer 1: low rumble (heavily low-passed noise, slow decay).
-                float rumbleRaw = (Random.value * 2f - 1f) * Mathf.Exp(-t * 5f);
+                float rumbleRaw = (Random.value * 2f - 1f) * Mathf.Exp(-t * 4.5f);
                 lp += alpha * (rumbleRaw - lp);
-                float rumble = lp * 3.0f;
+                float rumble = lp * 3.2f;
 
                 // Layer 2: crackle (sparse bright pops, fast decay).
                 float crackle = 0f;
-                if (Random.value < 0.06f)
-                    crackle = (Random.value * 2f - 1f) * Mathf.Exp(-t * 9f) * 0.7f;
+                if (Random.value < 0.05f)
+                    crackle = (Random.value * 2f - 1f) * Mathf.Exp(-t * 8f) * 0.75f;
 
-                data[i] = Mathf.Clamp(rumble + crackle, -1f, 1f);
+                // Layer 3: initial hard punch.
+                float punch = Mathf.Sin(2f * Mathf.PI * 55f * t) * Mathf.Exp(-t * 11f) * 0.8f;
+
+                data[i] = Mathf.Clamp(rumble + crackle + punch, -1f, 1f);
             }
             var clip = AudioClip.Create(name, samples, 1, SampleRate, false);
             clip.SetData(data, 0);
