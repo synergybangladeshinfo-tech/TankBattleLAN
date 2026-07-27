@@ -65,6 +65,7 @@ namespace TankBattle.UI
         readonly Dictionary<ControlId, RectTransform> _proxies =
             new Dictionary<ControlId, RectTransform>();
         readonly Dictionary<ControlId, Image> _proxyImages = new Dictionary<ControlId, Image>();
+        readonly Dictionary<ControlId, GameObject> _proxyRings = new Dictionary<ControlId, GameObject>();
 
         RectTransform _playfield;     // full-screen area the controls live in
         Slider _sizeSlider;
@@ -98,7 +99,7 @@ namespace TankBattle.UI
         void BuildUI(RectTransform root)
         {
             // Dim backdrop so the proxies pop.
-            var bg = UIFactory.CreatePanel(root, "Backdrop", new Color(0.03f, 0.05f, 0.08f, 0.96f),
+            var bg = UIFactory.CreatePanel(root, "Backdrop", new Color(0.03f, 0.05f, 0.08f, 0.985f),
                 Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
             bg.GetComponent<Image>().raycastTarget = true;
 
@@ -113,15 +114,44 @@ namespace TankBattle.UI
                 (ControlLayout.Reference.x - toolWidth - margin * 2f) / ControlLayout.Reference.x,
                 (ControlLayout.Reference.y - 150f) / ControlLayout.Reference.y);
 
-            var frame = UIFactory.CreatePanel(root, "ScreenFrame", new Color(1f, 1f, 1f, 0.07f),
+            // Phone-shaped frame so it reads as "this is your screen".
+            var frame = UIFactory.CreatePanel(root, "ScreenFrame", new Color(0.30f, 0.60f, 0.85f, 0.35f),
                 new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), Vector2.zero, Vector2.zero);
             frame.pivot = new Vector2(0f, 0.5f);
-            frame.sizeDelta = ControlLayout.Reference * scale;
+            frame.sizeDelta = ControlLayout.Reference * scale + new Vector2(10f, 10f);
             frame.anchoredPosition = new Vector2(margin, -20f);
-            frame.GetComponent<Image>().raycastTarget = false;
+            var frameImg = frame.GetComponent<Image>();
+            frameImg.sprite = UIFactory.RoundedSprite;
+            frameImg.type = Image.Type.Sliced;
+            frameImg.raycastTarget = false;
+
+            // Inner "screen" fill.
+            var screen = UIFactory.CreatePanel(frame, "Screen", new Color(0.07f, 0.10f, 0.15f, 1f),
+                Vector2.zero, Vector2.one, new Vector2(5, 5), new Vector2(-5, -5));
+            var screenImg = screen.GetComponent<Image>();
+            screenImg.sprite = UIFactory.RoundedSprite;
+            screenImg.type = Image.Type.Sliced;
+            screenImg.raycastTarget = false;
+
+            // Faint thirds guides to help line buttons up.
+            for (int i = 1; i <= 2; i++)
+            {
+                var vline = UIFactory.CreatePanel(screen, $"GuideV{i}",
+                    new Color(1f, 1f, 1f, 0.055f),
+                    new Vector2(i / 3f, 0f), new Vector2(i / 3f, 1f),
+                    new Vector2(-1f, 12f), new Vector2(1f, -12f));
+                vline.GetComponent<Image>().raycastTarget = false;
+
+                var hline = UIFactory.CreatePanel(screen, $"GuideH{i}",
+                    new Color(1f, 1f, 1f, 0.055f),
+                    new Vector2(0f, i / 3f), new Vector2(1f, i / 3f),
+                    new Vector2(12f, -1f), new Vector2(-12f, 1f));
+                hline.GetComponent<Image>().raycastTarget = false;
+            }
 
             var pf = new GameObject("Playfield", typeof(RectTransform));
             pf.transform.SetParent(frame, false);
+            pf.transform.SetAsLastSibling();   // proxies draw above the screen fill
             _playfield = (RectTransform)pf.transform;
             _playfield.anchorMin = _playfield.anchorMax = _playfield.pivot = new Vector2(0.5f, 0.5f);
             _playfield.sizeDelta = ControlLayout.Reference;   // real 1920x1080 space
@@ -152,6 +182,20 @@ namespace TankBattle.UI
             img.sprite = UIFactory.CircleSprite;
             img.color = ProxyColors[(int)id];
             img.raycastTarget = true;
+
+            // Selection ring: a slightly larger circle behind the proxy, shown
+            // only for the control the size slider is currently editing.
+            var ringGo = new GameObject("SelectRing", typeof(Image));
+            ringGo.transform.SetParent(go.transform, false);
+            ringGo.transform.SetAsFirstSibling();
+            var ring = ringGo.GetComponent<Image>();
+            ring.sprite = UIFactory.CircleSprite;
+            ring.color = new Color(1f, 1f, 1f, 0.30f);
+            ring.raycastTarget = false;
+            UIFactory.Stretch((RectTransform)ringGo.transform,
+                new Vector2(-16f, -16f), new Vector2(16f, 16f));
+            ringGo.SetActive(false);
+            _proxyRings[id] = ringGo;
 
             // Anchored to the bottom-left corner, centred on its own pivot, so
             // the stored position is the control's CENTRE in 1920x1080 space.
@@ -289,11 +333,13 @@ namespace TankBattle.UI
 
                 var img = _proxyImages[id];
                 var c = ProxyColors[(int)id];
+                bool sel = id == _selected;
                 // Selected control stays brighter so you can see what you're sizing.
-                c.a = id == _selected
-                    ? Mathf.Max(0.85f, ControlLayout.Opacity)
-                    : ControlLayout.Opacity;
+                c.a = sel ? Mathf.Max(0.9f, ControlLayout.Opacity) : ControlLayout.Opacity;
                 img.color = c;
+
+                if (_proxyRings.TryGetValue(id, out var ring) && ring != null)
+                    ring.SetActive(sel);
             }
         }
 

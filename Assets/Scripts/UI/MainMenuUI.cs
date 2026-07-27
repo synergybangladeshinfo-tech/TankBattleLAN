@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TankBattle.Audio;
 using TankBattle.Core;
+using TankBattle.Gameplay;
 using TankBattle.Networking;
 
 namespace TankBattle.UI
@@ -37,13 +38,12 @@ namespace TankBattle.UI
         readonly List<Button> _styleButtons = new List<Button>();
         readonly List<Button> _patternButtons = new List<Button>();
         Text _garageStats;
-        Text _rankText;
         ControlEditor _controlEditor;
         float _nextHostListRefresh;
 
         // Live 3D tank preview (Garage): rendered into a texture by its own rig.
         RenderTexture _previewRT;
-        GameObject _previewRig, _previewTank;
+        GameObject _previewRig, _previewTank, _previewModel;
         RawImage _previewImage;
 
         void Start()
@@ -117,14 +117,44 @@ namespace TankBattle.UI
                 Vector2.zero, Vector2.zero);
             bg.GetComponent<Image>().sprite = UIFactory.MenuBackgroundSprite;
 
-            var title = UIFactory.CreateText(_canvas.transform, "Title", "TANK BATTLE LAN",
-                92, UIFactory.TextColor);
+            // Warm glow behind the title so the top of the screen has some life.
+            var glow = UIFactory.CreatePanel(_canvas.transform, "TitleGlow",
+                new Color(1f, 0.55f, 0.15f, 0.13f),
+                new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero, Vector2.zero);
+            glow.sizeDelta = new Vector2(1500, 620);
+            glow.pivot = new Vector2(0.5f, 1f);
+            glow.anchoredPosition = new Vector2(0, 60);
+            var glowImg = glow.GetComponent<Image>();
+            glowImg.sprite = UIFactory.CircleSprite;
+            glowImg.raycastTarget = false;
+
+            // --- title block: accent bar + wordmark + rule ---
+            var title = UIFactory.CreateText(_canvas.transform, "Title", "TANK BATTLE",
+                104, UIFactory.TextColor);
             title.fontStyle = FontStyle.Bold;
-            UIFactory.SetAnchoredPos(title, new Vector2(0.5f, 1f), new Vector2(0, -110));
+            UIFactory.SetAnchoredPos(title, new Vector2(0.5f, 1f), new Vector2(0, -96));
+
+            var lan = UIFactory.CreateText(_canvas.transform, "TitleLan", "L A N",
+                40, new Color(1f, 0.62f, 0.18f, 1f));
+            lan.fontStyle = FontStyle.Bold;
+            UIFactory.SetAnchoredPos(lan, new Vector2(0.5f, 1f), new Vector2(0, -160));
+
+            // Thin rule under the wordmark, brightest in the middle.
+            var rule = UIFactory.CreatePanel(_canvas.transform, "TitleRule",
+                new Color(1f, 0.62f, 0.18f, 0.55f),
+                new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero, Vector2.zero);
+            rule.sizeDelta = new Vector2(640, 3);
+            rule.pivot = new Vector2(0.5f, 1f);
+            rule.anchoredPosition = new Vector2(0, -186);
+            rule.GetComponent<Image>().raycastTarget = false;
 
             var sub = UIFactory.CreateText(_canvas.transform, "Subtitle",
-                "OFFLINE  ·  WI-FI / HOTSPOT  ·  UP TO 16 PLAYERS  ·  5 MODES", 28, UIFactory.TextDim);
-            UIFactory.SetAnchoredPos(sub, new Vector2(0.5f, 1f), new Vector2(0, -180));
+                "OFFLINE  ·  WI-FI / HOTSPOT  ·  16 PLAYERS  ·  5 MODES", 26, UIFactory.TextDim);
+            UIFactory.SetAnchoredPos(sub, new Vector2(0.5f, 1f), new Vector2(0, -212));
+
+            var ver = UIFactory.CreateText(_canvas.transform, "Version", "v2.7", 22,
+                new Color(0.45f, 0.50f, 0.58f, 1f));
+            UIFactory.SetAnchoredPos(ver, new Vector2(1f, 0f), new Vector2(-30, 26));
 
             _noticeText = UIFactory.CreateText(_canvas.transform, "Notice", "", 28, UIFactory.AccentRed);
             UIFactory.SetAnchoredPos(_noticeText, new Vector2(0.5f, 0f), new Vector2(0, 40));
@@ -132,16 +162,37 @@ namespace TankBattle.UI
 
         void BuildHomePanel()
         {
+            // Two columns: play actions on the left, everything else on the right.
             _homePanel = UIFactory.CreateCenterPanel(_canvas.transform, "HomePanel",
-                Color.clear, new Vector2(640, 760));
-            UIFactory.AddVerticalLayout(_homePanel, 20);
+                Color.clear, new Vector2(1280, 640));
+            ((RectTransform)_homePanel.transform).anchoredPosition = new Vector2(0, -70);
 
             string savedName = SettingsManager.SavedPlayerName;
             if (string.IsNullOrEmpty(savedName)) savedName = "Player" + Random.Range(100, 999);
             GameSession.PlayerName = savedName;
 
-            _nameField = UIFactory.CreateInputField(_homePanel, "NameField", "Your name...",
-                new Vector2(520, 84));
+            // ---- name row (spans the full width, above both columns) ----
+            var nameCard = UIFactory.CreateRoundedPanel(_homePanel, "NameCard",
+                UIFactory.PanelColor, new Vector2(1240, 104));
+            nameCard.anchorMin = nameCard.anchorMax = new Vector2(0.5f, 1f);
+            nameCard.pivot = new Vector2(0.5f, 1f);
+            nameCard.anchoredPosition = Vector2.zero;
+
+            var nameLabel = UIFactory.CreateText(nameCard, "NameLabel", "CALLSIGN", 22,
+                UIFactory.TextDim, TextAnchor.MiddleLeft);
+            UIFactory.SetAnchoredPos(nameLabel, new Vector2(0f, 0.5f), new Vector2(34, 0));
+            ((RectTransform)nameLabel.transform).sizeDelta = new Vector2(200, 40);
+
+            _nameField = UIFactory.CreateInputField(nameCard, "NameField", "Your name...",
+                new Vector2(940, 66));
+            var nfRt = (RectTransform)_nameField.transform;
+            nfRt.anchorMin = nfRt.anchorMax = nfRt.pivot = new Vector2(1f, 0.5f);
+            nfRt.anchoredPosition = new Vector2(-26, 0);
+            var nfImg = _nameField.GetComponent<Image>();
+            nfImg.sprite = UIFactory.RoundedSprite;
+            nfImg.type = Image.Type.Sliced;
+            nfImg.color = new Color(0.06f, 0.08f, 0.12f, 1f);
+
             _nameField.text = savedName;
             _nameField.onEndEdit.AddListener(v =>
             {
@@ -150,58 +201,55 @@ namespace TankBattle.UI
                 SettingsManager.SavedPlayerName = GameSession.PlayerName;
             });
 
-            UIFactory.CreateButton(_homePanel, "Solo", "PLAY SOLO  (VS BOTS)", new Vector2(520, 90),
-                new Color(0.55f, 0.35f, 0.95f, 1f), () => OpenMatchSetup(solo: true));
-            UIFactory.CreateButton(_homePanel, "Host", "HOST GAME", new Vector2(520, 90),
+            // ---- left column: the three ways to start a match ----
+            var left = MenuColumn("PlayColumn", new Vector2(-320, -150));
+            UIFactory.CreateMenuButton(left, "Solo", "PLAY SOLO",
+                "practise against 5 AI tanks",
+                new Color(0.62f, 0.38f, 1f, 1f), () => OpenMatchSetup(solo: true));
+            UIFactory.CreateMenuButton(left, "Host", "HOST GAME",
+                "start a match others can join",
                 UIFactory.Accent, () => OpenMatchSetup(solo: false));
-            UIFactory.CreateButton(_homePanel, "Join", "JOIN GAME", new Vector2(520, 90),
+            UIFactory.CreateMenuButton(left, "Join", "JOIN GAME",
+                "find hosts on your Wi-Fi / hotspot",
                 UIFactory.AccentGreen, () =>
                 {
                     Show(_joinPanel);
                     LanDiscovery.Instance?.StartSearch();
                 });
-            UIFactory.CreateButton(_homePanel, "Garage", "MY TANK", new Vector2(520, 90),
-                new Color(0.85f, 0.60f, 0.20f, 1f), () =>
+
+            // ---- right column: customise + system ----
+            var right = MenuColumn("SetupColumn", new Vector2(320, -150));
+            UIFactory.CreateMenuButton(right, "Garage", "MY TANK",
+                "colour, camo, body style",
+                new Color(1f, 0.66f, 0.20f, 1f), () =>
                 {
                     EnsurePreviewRig();
                     RefreshPreviewTank();
                     Show(_garagePanel);
                 });
-            UIFactory.CreateButton(_homePanel, "Controls", "CONTROLS", new Vector2(520, 90),
-                new Color(0.20f, 0.70f, 0.70f, 1f), OpenControlEditor);
-            UIFactory.CreateButton(_homePanel, "Settings", "SETTINGS", new Vector2(520, 90),
-                UIFactory.PanelLight, () => Show(_settingsPanel));
-            UIFactory.CreateButton(_homePanel, "Quit", "QUIT", new Vector2(520, 90),
-                UIFactory.PanelLight, Application.Quit);
-
-            // Rank strip along the bottom of the home screen.
-            _rankText = UIFactory.CreateText(_canvas.transform, "Rank", "", 30, UIFactory.Accent);
-            _rankText.fontStyle = FontStyle.Bold;
-            UIFactory.SetAnchoredPos(_rankText, new Vector2(0.5f, 0f), new Vector2(0, 100));
-            RefreshRank();
-
-            // A saved choice can be above the current level after a reinstall -
-            // fall back to something this player has actually unlocked.
-            if (!PlayerProgress.IsStyleUnlocked(GameSession.TankStyleIndex))
-            {
-                GameSession.TankStyleIndex = 0;
-                SettingsManager.SavedTankStyle = 0;
-            }
-            if (!PlayerProgress.IsPatternUnlocked(GameSession.TankPatternIndex))
-            {
-                GameSession.TankPatternIndex = 0;
-                SettingsManager.SavedTankPattern = 0;
-            }
+            UIFactory.CreateMenuButton(right, "Controls", "CONTROLS",
+                "move every button where you want",
+                new Color(0.22f, 0.78f, 0.78f, 1f), OpenControlEditor);
+            UIFactory.CreateMenuButton(right, "Settings", "SETTINGS",
+                "sound and graphics quality",
+                new Color(0.55f, 0.60f, 0.70f, 1f), () => Show(_settingsPanel));
+            UIFactory.CreateMenuButton(right, "Quit", "QUIT", "",
+                new Color(0.85f, 0.30f, 0.28f, 1f), Application.Quit,
+                new Vector2(560, 72));
         }
 
-        /// <summary>Current rank / level / XP-to-next line.</summary>
-        void RefreshRank()
+        /// <summary>One stacked column of menu cards inside the home panel.</summary>
+        RectTransform MenuColumn(string name, Vector2 offset)
         {
-            if (_rankText == null) return;
-            _rankText.text = PlayerProgress.Level >= PlayerProgress.MaxLevel
-                ? $"{PlayerProgress.Rank}   ·   LV {PlayerProgress.Level}   ·   MAX"
-                : $"{PlayerProgress.Rank}   ·   LV {PlayerProgress.Level}   ·   " +
-                  $"{PlayerProgress.XpToNextLevel} XP to next";
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(_homePanel, false);
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 1f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.sizeDelta = new Vector2(600, 460);
+            rt.anchoredPosition = offset;
+            UIFactory.AddVerticalLayout(rt, 18, new RectOffset(0, 0, 0, 0));
+            return rt;
         }
 
         /// <summary>Opens the full-screen control customiser on its own canvas.</summary>
@@ -294,24 +342,29 @@ namespace TankBattle.UI
             sh.childControlWidth = false; sh.childControlHeight = false;
             sh.childForceExpandWidth = false; sh.childForceExpandHeight = false;
 
+            // Built-in hulls first, then any 3D models found in
+            // Assets/Resources/TankModels (drop .fbx/.glb files there and they
+            // appear here automatically - see TankModelLibrary).
             _styleButtons.Clear();
-            for (int i = 0; i < GameConstants.TankStyleNames.Length; i++)
+            int builtInStyles = GameConstants.TankStyleNames.Length;
+            int totalStyles = builtInStyles + TankModelLibrary.Count;
+            float styleBtnW = totalStyles <= 3 ? 258f : (totalStyles <= 5 ? 158f : 118f);
+
+            for (int i = 0; i < totalStyles; i++)
             {
                 int index = i;
+                string label = i < builtInStyles
+                    ? GameConstants.TankStyleNames[i]
+                    : TankModelLibrary.Names[i - builtInStyles];
                 var b = UIFactory.CreateButton(styleRt, $"Style{i}",
-                    GameConstants.TankStyleNames[i], new Vector2(258, 84),
+                    label, new Vector2(styleBtnW, 84),
                     UIFactory.PanelLight, () =>
                     {
-                        if (!PlayerProgress.IsStyleUnlocked(index))
-                        {
-                            ShowNotice($"Unlocks at level {PlayerProgress.StyleLevel(index)}");
-                            return;
-                        }
                         GameSession.TankStyleIndex = index;
                         SettingsManager.SavedTankStyle = index;
                         HighlightGarage();
                         RefreshPreviewTank();
-                    }, 28);
+                    }, totalStyles <= 3 ? 28 : 20);
                 _styleButtons.Add(b);
             }
 
@@ -336,12 +389,6 @@ namespace TankBattle.UI
                     GameConstants.TankPatternNames[i], new Vector2(190, 76),
                     UIFactory.PanelLight, () =>
                     {
-                        // Locked patterns tell you the level instead of applying.
-                        if (!PlayerProgress.IsPatternUnlocked(index))
-                        {
-                            ShowNotice($"Unlocks at level {PlayerProgress.PatternLevel(index)}");
-                            return;
-                        }
                         GameSession.TankPatternIndex = index;
                         SettingsManager.SavedTankPattern = index;
                         HighlightGarage();
@@ -425,10 +472,26 @@ namespace TankBattle.UI
         {
             if (_previewTank == null) return;
 
-            for (int i = 0; i < GameConstants.TankStyleNames.Length; i++)
+            int builtIn = GameConstants.TankStyleNames.Length;
+            bool imported = GameSession.TankStyleIndex >= builtIn && TankModelLibrary.HasModels;
+
+            for (int i = 0; i < builtIn; i++)
             {
                 var hull = _previewTank.transform.Find($"Hull_{i}");
-                if (hull != null) hull.gameObject.SetActive(i == GameSession.TankStyleIndex);
+                if (hull != null)
+                    hull.gameObject.SetActive(!imported && i == GameSession.TankStyleIndex);
+            }
+
+            // Swap in the imported 3D model for the live Garage preview.
+            if (_previewModel != null) { Destroy(_previewModel); _previewModel = null; }
+            if (imported)
+            {
+                _previewModel = TankModelLibrary.Spawn(
+                    GameSession.TankStyleIndex - builtIn, _previewTank.transform, out Transform t);
+                if (t != null) t.gameObject.SetActive(false);
+                if (_previewModel != null)
+                    TankModelLibrary.Tint(_previewModel,
+                        GameConstants.GetPlayerColor(GameSession.TankColorIndex));
             }
 
             var tex = Resources.Load<Texture2D>(
@@ -479,28 +542,12 @@ namespace TankBattle.UI
                 outline.effectDistance = new Vector2(5, 5);
                 outline.enabled = sel;
             }
-            // Styles / patterns: selected = accent, locked = dimmed with the
-            // required level shown on the label.
             for (int i = 0; i < _styleButtons.Count; i++)
-            {
-                bool unlocked = PlayerProgress.IsStyleUnlocked(i);
-                _styleButtons[i].GetComponent<Image>().color = !unlocked
-                    ? new Color(0.10f, 0.12f, 0.16f, 1f)
-                    : (i == GameSession.TankStyleIndex ? UIFactory.Accent : UIFactory.PanelLight);
-                SetButtonLabel(_styleButtons[i], unlocked
-                    ? GameConstants.TankStyleNames[i]
-                    : $"{GameConstants.TankStyleNames[i]}\nLV {PlayerProgress.StyleLevel(i)}");
-            }
+                _styleButtons[i].GetComponent<Image>().color =
+                    i == GameSession.TankStyleIndex ? UIFactory.Accent : UIFactory.PanelLight;
             for (int i = 0; i < _patternButtons.Count; i++)
-            {
-                bool unlocked = PlayerProgress.IsPatternUnlocked(i);
-                _patternButtons[i].GetComponent<Image>().color = !unlocked
-                    ? new Color(0.10f, 0.12f, 0.16f, 1f)
-                    : (i == GameSession.TankPatternIndex ? UIFactory.Accent : UIFactory.PanelLight);
-                SetButtonLabel(_patternButtons[i], unlocked
-                    ? GameConstants.TankPatternNames[i]
-                    : $"{GameConstants.TankPatternNames[i]}\nLV {PlayerProgress.PatternLevel(i)}");
-            }
+                _patternButtons[i].GetComponent<Image>().color =
+                    i == GameSession.TankPatternIndex ? UIFactory.Accent : UIFactory.PanelLight;
 
             if (_garageStats != null)
             {
@@ -517,9 +564,19 @@ namespace TankBattle.UI
                 _garagePreview.text =
                     $"{GameConstants.PlayerColorNames[GameSession.TankColorIndex]}  " +
                     $"{GameConstants.TankPatternNames[GameSession.TankPatternIndex]}  " +
-                    $"{GameConstants.TankStyleNames[GameSession.TankStyleIndex]}";
+                    $"{StyleName(GameSession.TankStyleIndex)}";
                 _garagePreview.color = GameConstants.PlayerColors[GameSession.TankColorIndex];
             }
+        }
+
+        /// <summary>Style label for either a built-in hull or an imported model.</summary>
+        static string StyleName(int index)
+        {
+            int builtIn = GameConstants.TankStyleNames.Length;
+            if (index >= 0 && index < builtIn) return GameConstants.TankStyleNames[index];
+            int m = index - builtIn;
+            if (m >= 0 && m < TankModelLibrary.Count) return TankModelLibrary.Names[m];
+            return GameConstants.TankStyleNames[0];
         }
 
         static string Bars(float v)
@@ -799,13 +856,6 @@ namespace TankBattle.UI
             _joinPanel.gameObject.SetActive(panel == _joinPanel);
             _lobbyPanel.gameObject.SetActive(panel == _lobbyPanel);
             _settingsPanel.gameObject.SetActive(panel == _settingsPanel);
-
-            // The rank strip belongs to the home screen only.
-            if (_rankText != null)
-            {
-                _rankText.gameObject.SetActive(panel == _homePanel);
-                if (panel == _homePanel) RefreshRank();
-            }
         }
     }
 }

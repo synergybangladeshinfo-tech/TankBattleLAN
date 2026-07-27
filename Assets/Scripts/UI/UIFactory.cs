@@ -118,6 +118,41 @@ namespace TankBattle.UI
             }
         }
 
+        static Sprite _rounded;
+        /// <summary>
+        /// 9-sliced rounded-rectangle sprite. Everything in the menu uses this
+        /// instead of hard square blocks, which is most of why v2.7 looks less
+        /// like a prototype.
+        /// </summary>
+        public static Sprite RoundedSprite
+        {
+            get
+            {
+                if (_rounded != null) return _rounded;
+                const int size = 64;
+                const float radius = 18f;
+                var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+                var px = new Color32[size * size];
+                for (int y = 0; y < size; y++)
+                    for (int x = 0; x < size; x++)
+                    {
+                        // Distance to the rounded-rect boundary.
+                        float qx = Mathf.Max(Mathf.Max(radius - (x + 0.5f), 0f),
+                                             Mathf.Max((x + 0.5f) - (size - radius), 0f));
+                        float qy = Mathf.Max(Mathf.Max(radius - (y + 0.5f), 0f),
+                                             Mathf.Max((y + 0.5f) - (size - radius), 0f));
+                        float d = Mathf.Sqrt(qx * qx + qy * qy) - radius;
+                        float a = Mathf.Clamp01(-d + 0.5f);
+                        px[y * size + x] = new Color(1f, 1f, 1f, a);
+                    }
+                tex.SetPixels32(px);
+                tex.Apply();
+                _rounded = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f),
+                    100f, 0, SpriteMeshType.FullRect, new Vector4(22, 22, 22, 22));
+                return _rounded;
+            }
+        }
+
         static Sprite _menuBg;
         /// <summary>Navy gradient + faint grid for the main-menu backdrop.</summary>
         public static Sprite MenuBackgroundSprite
@@ -231,6 +266,91 @@ namespace TankBattle.UI
             var text = CreateText(go.transform, "Label", label, fontSize, TextColor);
             Stretch((RectTransform)text.transform);
             return btn;
+        }
+
+        /// <summary>
+        /// Big menu "card" button: rounded dark body, a coloured accent stripe
+        /// down the left edge, a bold title and a small caption underneath.
+        /// Much easier to scan than a row of flat coloured rectangles.
+        /// </summary>
+        public static Button CreateMenuButton(Transform parent, string name, string title,
+            string caption, Color accent, UnityEngine.Events.UnityAction onClick,
+            Vector2? size = null)
+        {
+            var go = new GameObject(name, typeof(Image), typeof(Button));
+            go.transform.SetParent(parent, false);
+            var rt = (RectTransform)go.transform;
+            rt.sizeDelta = size ?? new Vector2(560, 96);
+
+            var body = go.GetComponent<Image>();
+            body.sprite = RoundedSprite;
+            body.type = Image.Type.Sliced;
+            body.color = PanelLight;
+
+            var btn = go.GetComponent<Button>();
+            var colors = btn.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1.18f, 1.18f, 1.18f, 1f);
+            colors.pressedColor = new Color(0.82f, 0.82f, 0.82f, 1f);
+            colors.fadeDuration = 0.08f;
+            btn.colors = colors;
+            btn.onClick.AddListener(() => AudioManager.Instance?.PlayClick());
+            if (onClick != null) btn.onClick.AddListener(onClick);
+
+            // Accent stripe hugging the left edge.
+            var stripe = new GameObject("Accent", typeof(Image));
+            stripe.transform.SetParent(go.transform, false);
+            var srt = (RectTransform)stripe.transform;
+            srt.anchorMin = new Vector2(0f, 0f);
+            srt.anchorMax = new Vector2(0f, 1f);
+            srt.pivot = new Vector2(0f, 0.5f);
+            srt.sizeDelta = new Vector2(12f, -20f);
+            srt.anchoredPosition = new Vector2(10f, 0f);
+            var simg = stripe.GetComponent<Image>();
+            simg.sprite = RoundedSprite;
+            simg.type = Image.Type.Sliced;
+            simg.color = accent;
+            simg.raycastTarget = false;
+
+            bool hasCaption = !string.IsNullOrEmpty(caption);
+
+            var titleText = CreateText(go.transform, "Title", title, 34, TextColor,
+                TextAnchor.MiddleLeft);
+            titleText.fontStyle = FontStyle.Bold;
+            var trt = (RectTransform)titleText.transform;
+            trt.anchorMin = new Vector2(0f, 0f);
+            trt.anchorMax = new Vector2(1f, 1f);
+            trt.offsetMin = new Vector2(40f, hasCaption ? 26f : 0f);
+            trt.offsetMax = new Vector2(-24f, 0f);
+
+            if (hasCaption)
+            {
+                var capText = CreateText(go.transform, "Caption", caption, 22, TextDim,
+                    TextAnchor.MiddleLeft);
+                var crt = (RectTransform)capText.transform;
+                crt.anchorMin = new Vector2(0f, 0f);
+                crt.anchorMax = new Vector2(1f, 1f);
+                crt.offsetMin = new Vector2(40f, 0f);
+                crt.offsetMax = new Vector2(-24f, -40f);
+            }
+
+            return btn;
+        }
+
+        /// <summary>Rounded panel (same look as the menu cards, no button behaviour).</summary>
+        public static RectTransform CreateRoundedPanel(Transform parent, string name,
+            Color color, Vector2 size)
+        {
+            var go = new GameObject(name, typeof(Image));
+            go.transform.SetParent(parent, false);
+            var img = go.GetComponent<Image>();
+            img.sprite = RoundedSprite;
+            img.type = Image.Type.Sliced;
+            img.color = color;
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = size;
+            return rt;
         }
 
         public static InputField CreateInputField(Transform parent, string name, string placeholder,

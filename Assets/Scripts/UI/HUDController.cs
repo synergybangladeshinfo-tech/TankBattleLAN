@@ -575,26 +575,12 @@ namespace TankBattle.UI
             _winTitle.text = match.GetWinnerTitle(localId);
             _winBoard.text = BuildScoreboardString();
 
-            // Award XP for this match and celebrate any level-up.
+            // Match summary line (kills / deaths this round).
             if (_xpText != null)
             {
                 var entry = match.GetLocalEntry();
-                bool won = match.GetWinner().ClientId == localId;
-                int levelsGained = PlayerProgress.AwardMatch(entry.Kills, won, out int gained);
-
-                string line = $"+{gained} XP    ·    {PlayerProgress.Rank}  LV {PlayerProgress.Level}";
-                if (levelsGained > 0)
-                {
-                    line = $"LEVEL UP!   LV {PlayerProgress.Level}  {PlayerProgress.Rank}\n+{gained} XP";
-                    _xpText.color = UIFactory.AccentGreen;
-                }
-                else
-                {
-                    line += PlayerProgress.Level >= PlayerProgress.MaxLevel
-                        ? "" : $"    ·    {PlayerProgress.XpToNextLevel} XP to next";
-                    _xpText.color = UIFactory.TextColor;
-                }
-                _xpText.text = line;
+                _xpText.color = UIFactory.TextDim;
+                _xpText.text = $"your round:  {entry.Kills} kills  ·  {entry.Deaths} deaths";
             }
 
             // Only the host can drag everyone back to the lobby.
