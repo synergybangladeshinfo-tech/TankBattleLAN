@@ -415,8 +415,58 @@ namespace TankBattle.EditorTools
 
         // ------------------------------------------------------- network manager
 
+        /// <summary>
+        /// Proximity mine dropped by the MINE weapon: a squat dark disc with a
+        /// small emissive "Light" child the Mine script pulses while it arms.
+        /// </summary>
+        public static GameObject BuildMinePrefab()
+        {
+            var body = CreateMaterial("Mine", new Color(0.16f, 0.17f, 0.19f));   // dark casing
+            var lamp = CreateMaterial("MineLight", new Color(1f, 0.25f, 0.2f));  // warning light
+
+            var root = new GameObject("Mine");
+            try
+            {
+                AddPart(root, PrimitiveType.Cylinder, "Visual", Vector3.zero,
+                    new Vector3(0.7f, 0.09f, 0.7f), body);
+                AddPart(root, PrimitiveType.Sphere, "Light", new Vector3(0f, 0.12f, 0f),
+                    Vector3.one * 0.22f, lamp);
+
+                // Blast particles, reusing the shared explosion look.
+                var boom = new GameObject("ExplosionPS");
+                boom.transform.SetParent(root.transform, false);
+                var ps = boom.AddComponent<ParticleSystem>();
+                var main = ps.main;
+                main.duration = 0.5f;
+                main.loop = false;
+                main.playOnAwake = false;
+                main.startLifetime = 0.55f;
+                main.startSpeed = 9f;
+                main.startSize = 0.7f;
+                main.startColor = new Color(1f, 0.55f, 0.15f);
+                var emission = ps.emission;
+                emission.enabled = true;
+                emission.rateOverTime = 0f;
+                emission.SetBursts(new[] { new ParticleSystem.Burst(0f, (short)26) });
+                var shape = ps.shape;
+                shape.shapeType = ParticleSystemShapeType.Sphere;
+                shape.radius = 0.3f;
+                ps.Stop();
+
+                root.AddComponent<NetworkObject>();
+                root.AddComponent<Mine>();
+
+                return PrefabUtility.SaveAsPrefabAsset(root, $"{PrefabDir}/Mine.prefab");
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
         public static GameObject BuildNetworkManagerPrefab(GameObject tankPrefab,
-            GameObject bulletPrefab, GameObject pickupPrefab, GameObject grenadePrefab)
+            GameObject bulletPrefab, GameObject pickupPrefab, GameObject grenadePrefab,
+            GameObject minePrefab)
         {
             var root = new GameObject("NetworkManager");
             try
@@ -437,6 +487,7 @@ namespace TankBattle.EditorTools
                 so.FindProperty("bulletPrefab").objectReferenceValue = bulletPrefab;
                 so.FindProperty("pickupPrefab").objectReferenceValue = pickupPrefab;
                 so.FindProperty("grenadePrefab").objectReferenceValue = grenadePrefab;
+                so.FindProperty("minePrefab").objectReferenceValue = minePrefab;
                 so.ApplyModifiedPropertiesWithoutUndo();
 
                 return PrefabUtility.SaveAsPrefabAsset(root, $"{PrefabDir}/NetworkManager.prefab");

@@ -29,8 +29,9 @@ namespace TankBattle.EditorTools
             var bullet = PrefabBuilder.BuildBulletPrefab();
             var pickup = PrefabBuilder.BuildPickupPrefab();
             var grenade = PrefabBuilder.BuildGrenadePrefab();
+            var mine = PrefabBuilder.BuildMinePrefab();
             PrefabBuilder.BuildPreviewPrefab(); // Garage 3D preview (Resources)
-            var netMgr = PrefabBuilder.BuildNetworkManagerPrefab(tank, bullet, pickup, grenade);
+            var netMgr = PrefabBuilder.BuildNetworkManagerPrefab(tank, bullet, pickup, grenade, mine);
             Debug.Log("[TankBattle] Prefabs generated.");
 
             // 2. Scenes.
